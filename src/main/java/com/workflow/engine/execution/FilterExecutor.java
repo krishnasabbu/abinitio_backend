@@ -9,14 +9,37 @@ import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Executor for filtering items based on SpEL expressions.
+ *
+ * Evaluates a SpEL (Spring Expression Language) condition for each input item.
+ * Items for which the condition evaluates to true are passed to the output;
+ * items evaluating to false are filtered out (dropped).
+ *
+ * Configuration:
+ * - condition: (required) SpEL expression that evaluates to boolean
+ *              The item itself is available as the root object in the expression
+ *              Example: "name.startsWith('A')" or "age > 18"
+ *
+ * Output:
+ * Sets "outputItems" variable with the filtered list of items.
+ *
+ * Thread safety: Thread-safe. SpEL parser is stateless.
+ *
+ * @author Workflow Engine
+ * @version 1.0
+ */
 @Component
 public class FilterExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
+    private static final Logger logger = LoggerFactory.getLogger(FilterExecutor.class);
     private static final ExpressionParser parser = new SpelExpressionParser();
 
     @Override
@@ -26,6 +49,7 @@ public class FilterExecutor implements NodeExecutor<Map<String, Object>, Map<Str
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        logger.debug("Creating filter reader");
         List<Map<String, Object>> items = (List<Map<String, Object>>) context.getVariable("inputItems");
         if (items == null) {
             items = new ArrayList<>();
@@ -35,8 +59,10 @@ public class FilterExecutor implements NodeExecutor<Map<String, Object>, Map<Str
 
     @Override
     public ItemProcessor<Map<String, Object>, Map<String, Object>> createProcessor(NodeExecutionContext context) {
+        logger.debug("Creating filter processor");
         JsonNode config = context.getNodeDefinition().getConfig();
         String condition = config.get("condition").asText();
+        logger.debug("Filter condition: {}", condition);
 
         return item -> {
             try {
@@ -44,11 +70,14 @@ public class FilterExecutor implements NodeExecutor<Map<String, Object>, Map<Str
                 Object result = parser.parseExpression(condition).getValue(evalContext);
 
                 if (result instanceof Boolean && (Boolean) result) {
+                    logger.debug("Item passed filter condition");
                     return item;
                 } else {
+                    logger.debug("Item filtered out (condition evaluated to false)");
                     return null;
                 }
             } catch (Exception e) {
+                logger.warn("Filter evaluation failed for item: {}", e.getMessage());
                 return null;
             }
         };
@@ -56,6 +85,7 @@ public class FilterExecutor implements NodeExecutor<Map<String, Object>, Map<Str
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
+        logger.debug("Creating filter writer");
         return items -> {
             List<Map<String, Object>> outputList = new ArrayList<>();
             for (Map<String, Object> item : items) {
@@ -63,22 +93,27 @@ public class FilterExecutor implements NodeExecutor<Map<String, Object>, Map<Str
                     outputList.add(item);
                 }
             }
+            logger.info("Filter output: {} items passed filter", outputList.size());
             context.setVariable("outputItems", outputList);
         };
     }
 
     @Override
     public void validate(NodeExecutionContext context) {
+        logger.debug("Validating Filter configuration");
         JsonNode config = context.getNodeDefinition().getConfig();
 
         if (config == null || !config.has("condition")) {
+            logger.error("Filter configuration invalid - missing 'condition' property");
             throw new IllegalArgumentException("Filter node requires 'condition' in config");
         }
 
         String condition = config.get("condition").asText();
         if (condition == null || condition.trim().isEmpty()) {
+            logger.error("Filter configuration invalid - 'condition' cannot be empty");
             throw new IllegalArgumentException("Filter 'condition' cannot be empty");
         }
+        logger.debug("Filter configuration valid");
     }
 
     @Override
