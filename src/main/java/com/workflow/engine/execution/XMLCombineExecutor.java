@@ -14,13 +14,13 @@ import java.util.List;
 import java.util.Map;
 
 @Component
-public class SplitExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
+public class XMLCombineExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
-    private static final Logger logger = LoggerFactory.getLogger(SplitExecutor.class);
+    private static final Logger logger = LoggerFactory.getLogger(XMLCombineExecutor.class);
 
     @Override
     public String getNodeType() {
-        return "Split";
+        return "XMLCombine";
     }
 
     @Override
@@ -31,6 +31,9 @@ public class SplitExecutor implements NodeExecutor<Map<String, Object>, Map<Stri
 
     @Override
     public ItemProcessor<Map<String, Object>, Map<String, Object>> createProcessor(NodeExecutionContext context) {
+        JsonNode config = context.getNodeDefinition().getConfig();
+        String nodeId = context.getNodeDefinition().getId();
+        logger.debug("XMLCombine node {} processing", nodeId);
         return item -> item;
     }
 
@@ -43,7 +46,7 @@ public class SplitExecutor implements NodeExecutor<Map<String, Object>, Map<Stri
     public void validate(NodeExecutionContext context) {
         JsonNode config = context.getNodeDefinition().getConfig();
         if (config == null) {
-            throw new IllegalArgumentException("nodeType=Split, nodeId=" + context.getNodeDefinition().getId()
+            throw new IllegalArgumentException("nodeType=XMLCombine, nodeId=" + context.getNodeDefinition().getId()
                 + ", missing config object");
         }
     }
