@@ -1,14 +1,22 @@
 package com.workflow.engine.config;
 
+import com.workflow.engine.execution.AssertExecutor;
+import com.workflow.engine.execution.ComputeExecutor;
+import com.workflow.engine.execution.CountExecutor;
 import com.workflow.engine.execution.DBSinkExecutor;
 import com.workflow.engine.execution.DBSourceExecutor;
+import com.workflow.engine.execution.DenormalizeExecutor;
 import com.workflow.engine.execution.ErrorSinkExecutor;
 import com.workflow.engine.execution.FileSinkExecutor;
 import com.workflow.engine.execution.FileSourceExecutor;
 import com.workflow.engine.execution.FilterExecutor;
+import com.workflow.engine.execution.LimitExecutor;
+import com.workflow.engine.execution.MapExecutor;
 import com.workflow.engine.execution.NodeExecutorRegistry;
+import com.workflow.engine.execution.NormalizeExecutor;
 import com.workflow.engine.execution.ReformatExecutor;
 import com.workflow.engine.execution.RejectExecutor;
+import com.workflow.engine.execution.SampleExecutor;
 import com.workflow.engine.execution.ValidateExecutor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
@@ -28,7 +36,15 @@ public class NodeExecutorConfig {
         RejectExecutor rejectExecutor,
         ErrorSinkExecutor errorSinkExecutor,
         DBSourceExecutor dbSourceExecutor,
-        DBSinkExecutor dbSinkExecutor
+        DBSinkExecutor dbSinkExecutor,
+        ComputeExecutor computeExecutor,
+        MapExecutor mapExecutor,
+        NormalizeExecutor normalizeExecutor,
+        DenormalizeExecutor denormalizeExecutor,
+        SampleExecutor sampleExecutor,
+        LimitExecutor limitExecutor,
+        CountExecutor countExecutor,
+        AssertExecutor assertExecutor
     ) {
         return args -> {
             registry.register(fileSourceExecutor);
@@ -40,6 +56,14 @@ public class NodeExecutorConfig {
             registry.register(errorSinkExecutor);
             registry.register(dbSourceExecutor);
             registry.register(dbSinkExecutor);
+            registry.register(computeExecutor);
+            registry.register(mapExecutor);
+            registry.register(normalizeExecutor);
+            registry.register(denormalizeExecutor);
+            registry.register(sampleExecutor);
+            registry.register(limitExecutor);
+            registry.register(countExecutor);
+            registry.register(assertExecutor);
         };
     }
 }
