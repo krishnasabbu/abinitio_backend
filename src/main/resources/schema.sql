@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS DB_CONNECTION (
+  id VARCHAR(64) PRIMARY KEY,
+  name VARCHAR(100),
+  connection_type VARCHAR(50),
+  jdbc_url VARCHAR(500),
+  username VARCHAR(100),
+  password VARCHAR(500),
+  driver_class VARCHAR(200),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

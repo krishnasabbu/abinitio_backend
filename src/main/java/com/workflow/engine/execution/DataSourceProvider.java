@@ -1,42 +1,49 @@
 package com.workflow.engine.execution;
 
+import com.workflow.engine.model.DbConnectionConfig;
+import com.workflow.engine.repository.DbConnectionRepository;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.stereotype.Component;
 
 import javax.sql.DataSource;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class DataSourceProvider {
 
-    private final Map<String, DataSource> dataSources = new ConcurrentHashMap<>();
-    private DataSource defaultDataSource;
+    private final DbConnectionRepository repository;
+    private final ConcurrentHashMap<String, DataSource> cache = new ConcurrentHashMap<>();
 
-    public DataSourceProvider(DataSource dataSource) {
-        this.defaultDataSource = dataSource;
-        this.dataSources.put("default", dataSource);
+    public DataSourceProvider(DbConnectionRepository repository) {
+        this.repository = repository;
     }
 
-    public void registerDataSource(String connectionId, DataSource dataSource) {
-        dataSources.put(connectionId, dataSource);
+    public DataSource getOrCreate(String connectionId) {
+        return cache.computeIfAbsent(connectionId, this::create);
     }
 
-    public DataSource getDataSource(String connectionId) {
-        if (connectionId == null || connectionId.trim().isEmpty()) {
-            return defaultDataSource;
-        }
+    private DataSource create(String connectionId) {
+        DbConnectionConfig cfg = repository.findById(connectionId)
+            .orElseThrow(() -> new IllegalArgumentException(
+                "DB connection not found for connectionId: " + connectionId
+            ));
 
-        DataSource ds = dataSources.get(connectionId);
-        if (ds == null) {
-            throw new IllegalArgumentException("DataSource not found for connectionId: " + connectionId);
-        }
+        DriverManagerDataSource ds = new DriverManagerDataSource();
+        ds.setUrl(cfg.jdbcUrl());
+        ds.setUsername(cfg.username());
+        ds.setPassword(cfg.password());
+        ds.setDriverClassName(cfg.driverClass());
         return ds;
+    }
+
+    public void clearCache() {
+        cache.clear();
     }
 
     public boolean hasDataSource(String connectionId) {
         if (connectionId == null || connectionId.trim().isEmpty()) {
-            return true;
+            return false;
         }
-        return dataSources.containsKey(connectionId);
+        return repository.existsById(connectionId);
     }
 }

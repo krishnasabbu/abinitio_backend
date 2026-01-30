@@ -37,7 +37,7 @@ public class DBSourceExecutor implements NodeExecutor<Map<String, Object>, Map<S
 
         String query = determineQuery(config);
 
-        DataSource dataSource = dataSourceProvider.getDataSource(connectionId);
+        DataSource dataSource = dataSourceProvider.getOrCreate(connectionId);
 
         JdbcCursorItemReader<Map<String, Object>> reader = new JdbcCursorItemReader<>();
         reader.setDataSource(dataSource);

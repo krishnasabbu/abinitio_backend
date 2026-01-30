@@ -52,7 +52,7 @@ public class DBSinkExecutor implements NodeExecutor<Map<String, Object>, Map<Str
         String mode = config.has("mode") ? config.get("mode").asText().toLowerCase() : "insert";
         int batchSize = config.has("batchSize") ? config.get("batchSize").asInt() : 1000;
 
-        DataSource dataSource = dataSourceProvider.getDataSource(connectionId);
+        DataSource dataSource = dataSourceProvider.getOrCreate(connectionId);
         NamedParameterJdbcTemplate jdbcTemplate = new NamedParameterJdbcTemplate(dataSource);
 
         if ("truncate-insert".equals(mode) && !truncateExecuted) {
@@ -278,7 +278,7 @@ public class DBSinkExecutor implements NodeExecutor<Map<String, Object>, Map<Str
             }
 
             if ("upsert".equals(mode)) {
-                DataSource dataSource = dataSourceProvider.getDataSource(connectionId);
+                DataSource dataSource = dataSourceProvider.getOrCreate(connectionId);
                 List<String> primaryKeys = detectPrimaryKeys(dataSource, tableName);
                 if (primaryKeys.isEmpty()) {
                     throw new IllegalStateException(
