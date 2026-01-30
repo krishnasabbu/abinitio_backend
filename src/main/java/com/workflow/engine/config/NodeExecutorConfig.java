@@ -1,5 +1,7 @@
 package com.workflow.engine.config;
 
+import com.workflow.engine.execution.DBSinkExecutor;
+import com.workflow.engine.execution.DBSourceExecutor;
 import com.workflow.engine.execution.ErrorSinkExecutor;
 import com.workflow.engine.execution.FileSinkExecutor;
 import com.workflow.engine.execution.FileSourceExecutor;
@@ -24,7 +26,9 @@ public class NodeExecutorConfig {
         FilterExecutor filterExecutor,
         ValidateExecutor validateExecutor,
         RejectExecutor rejectExecutor,
-        ErrorSinkExecutor errorSinkExecutor
+        ErrorSinkExecutor errorSinkExecutor,
+        DBSourceExecutor dbSourceExecutor,
+        DBSinkExecutor dbSinkExecutor
     ) {
         return args -> {
             registry.register(fileSourceExecutor);
@@ -34,6 +38,8 @@ public class NodeExecutorConfig {
             registry.register(validateExecutor);
             registry.register(rejectExecutor);
             registry.register(errorSinkExecutor);
+            registry.register(dbSourceExecutor);
+            registry.register(dbSinkExecutor);
         };
     }
 }
