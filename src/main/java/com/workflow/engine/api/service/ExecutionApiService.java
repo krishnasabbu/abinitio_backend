@@ -91,6 +91,9 @@ public class ExecutionApiService {
             // Build execution plan
             ExecutionPlan plan = executionGraphBuilder.build(workflow);
 
+            // Log execution trace summary
+            logExecutionTraceSummary(executionId, workflowName, plan, executionMode);
+
             // Build and launch job
             launchWorkflowJob(plan, executionId, executionMode);
 
@@ -137,6 +140,24 @@ public class ExecutionApiService {
 
         // Launch job asynchronously
         jobLauncher.run(job, params);
+    }
+
+    private void logExecutionTraceSummary(String executionId, String workflowName, ExecutionPlan plan, String executionMode) {
+        int nodeCount = plan.steps().size();
+        List<String> entrySteps = plan.entryStepIds();
+
+        logger.info("===== EXECUTION TRACE SUMMARY =====");
+        logger.info("ExecutionId: {}", executionId);
+        logger.info("WorkflowName: {}", workflowName);
+        logger.info("NodeCount: {}", nodeCount);
+        logger.info("EntrySteps: {}", entrySteps);
+        logger.info("ExecutionMode: {}", executionMode);
+
+        for (String stepId : plan.steps().keySet()) {
+            logger.debug("Step: id={}, type={}", stepId, plan.steps().get(stepId).nodeType());
+        }
+
+        logger.info("===== END TRACE SUMMARY =====");
     }
 
     private Map<String, Object> buildErrorResponse(String message) {

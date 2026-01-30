@@ -5,16 +5,24 @@ import com.workflow.engine.execution.NodeExecutorRegistry;
 import com.workflow.engine.model.*;
 import org.springframework.stereotype.Component;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.*;
 import java.util.stream.Collectors;
 
 @Component
 public class ExecutionGraphBuilder {
 
+    private static final Logger logger = LoggerFactory.getLogger(ExecutionGraphBuilder.class);
     private final NodeExecutorRegistry nodeExecutorRegistry;
 
     public ExecutionGraphBuilder(NodeExecutorRegistry nodeExecutorRegistry) {
         this.nodeExecutorRegistry = nodeExecutorRegistry;
+    }
+
+    private String normalize(String nodeType) {
+        return nodeType == null ? "" : nodeType.trim();
     }
 
     public ExecutionPlan build(WorkflowDefinition workflow) {
@@ -85,17 +93,36 @@ public class ExecutionGraphBuilder {
 
     private void validateNodeExecutorsExist(List<NodeDefinition> nodes) {
         List<String> missingExecutors = new ArrayList<>();
+        Map<String, String> executorMapping = new LinkedHashMap<>();
+
         for (NodeDefinition node : nodes) {
             String nodeType = node.getType();
-            if (!nodeExecutorRegistry.hasExecutor(nodeType)) {
+            String normalizedType = normalize(nodeType);
+
+            if (normalizedType.isEmpty()) {
                 missingExecutors.add(nodeType);
+                continue;
+            }
+
+            if (!nodeExecutorRegistry.hasExecutor(normalizedType)) {
+                missingExecutors.add(normalizedType);
+            } else {
+                try {
+                    String executorClass = nodeExecutorRegistry.getExecutor(normalizedType).getClass().getSimpleName();
+                    executorMapping.put(normalizedType, executorClass);
+                } catch (Exception e) {
+                    missingExecutors.add(normalizedType);
+                }
             }
         }
+
         if (!missingExecutors.isEmpty()) {
             throw new GraphValidationException(
                 "No executor registered for node types: " + missingExecutors +
                 ". Cannot execute workflow. Please ensure all node types have corresponding executors.");
         }
+
+        logger.info("Executor mapping validated: {}", executorMapping);
     }
 
     private boolean hasCycles(List<NodeDefinition> nodes, List<Edge> edges) {

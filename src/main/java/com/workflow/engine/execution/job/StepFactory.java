@@ -23,10 +23,15 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.List;
 
 @Component
 public class StepFactory {
+
+    private static final Logger logger = LoggerFactory.getLogger(StepFactory.class);
 
     private final NodeExecutorRegistry executorRegistry;
     private final JobRepository jobRepository;
@@ -50,6 +55,10 @@ public class StepFactory {
         this.executionId = executionId;
     }
 
+    private String normalize(String nodeType) {
+        return nodeType == null ? "" : nodeType.trim();
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     public Step buildStep(StepNode stepNode) {
         return buildStep(stepNode, null, null);
@@ -57,7 +66,13 @@ public class StepFactory {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     public Step buildStep(StepNode stepNode, EdgeBufferStore bufferStore, String executionId) {
-        NodeExecutor executor = executorRegistry.getExecutor(stepNode.nodeType());
+        String normalizedNodeType = normalize(stepNode.nodeType());
+        logger.debug("Building step for nodeId='{}' with normalized nodeType='{}'",
+            stepNode.nodeId(), normalizedNodeType);
+
+        NodeExecutor executor = executorRegistry.getExecutor(normalizedNodeType);
+        logger.debug("Resolved executor for nodeType='{}': {}",
+            normalizedNodeType, executor.getClass().getSimpleName());
 
         NodeDefinition nodeDefinition = createNodeDefinition(stepNode);
         NodeExecutionContext context;
