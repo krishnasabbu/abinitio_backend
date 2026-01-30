@@ -18,6 +18,14 @@ public class PayloadNormalizer {
 
         @SuppressWarnings("unchecked")
         Map<String, Object> workflow = (Map<String, Object>) payload.get("workflow");
+
+        if (workflow == null) {
+            workflow = detectAndWrapCanvasFormat(payload);
+            if (workflow != null) {
+                payload.put("workflow", workflow);
+            }
+        }
+
         if (workflow == null) {
             return payload;
         }
@@ -33,6 +41,7 @@ public class PayloadNormalizer {
         return payload;
     }
 
+    @SuppressWarnings("unchecked")
     private static void normalizeNode(Map<String, Object> node) {
         if (node == null) {
             return;
@@ -40,7 +49,6 @@ public class PayloadNormalizer {
 
         String nodeType = (String) node.get("type");
         if (nodeType == null || nodeType.isEmpty()) {
-            @SuppressWarnings("unchecked")
             Map<String, Object> data = (Map<String, Object>) node.get("data");
             if (data != null && data.containsKey("nodeType")) {
                 nodeType = (String) data.get("nodeType");
@@ -52,10 +60,14 @@ public class PayloadNormalizer {
             normalizeNodeType(node, nodeType);
         }
 
-        @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) node.get("data");
         if (data != null) {
             normalizeConfigTypes(data);
+
+            Map<String, Object> configObj = (Map<String, Object>) data.get("config");
+            if (configObj != null && node.get("config") == null) {
+                node.put("config", mapper.convertValue(configObj, JsonNode.class));
+            }
         }
     }
 
@@ -110,6 +122,87 @@ public class PayloadNormalizer {
             }
 
             normalized.set(fieldName, normalizeJsonNode(fieldValue));
+        }
+
+        return normalized;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> detectAndWrapCanvasFormat(Map<String, Object> payload) {
+        if (payload == null) {
+            return null;
+        }
+
+        Object nodesObj = payload.get("nodes");
+        Object edgesObj = payload.get("edges");
+
+        if (nodesObj instanceof java.util.List && edgesObj instanceof java.util.List) {
+            Map<String, Object> workflow = new java.util.HashMap<>();
+
+            String workflowName = (String) payload.get("workflowName");
+            if (workflowName != null && !workflowName.isEmpty()) {
+                workflow.put("name", workflowName);
+            } else {
+                workflow.put("name", "Untitled Workflow");
+            }
+
+            String workflowId = (String) payload.get("id");
+            if (workflowId != null && !workflowId.isEmpty()) {
+                workflow.put("id", workflowId);
+            }
+
+            workflow.put("nodes", nodesObj);
+            workflow.put("edges", normalizeCanvasEdges((java.util.List<Map<String, Object>>) edgesObj));
+
+            Map<String, Object> wrappedPayload = new java.util.HashMap<>(payload);
+            wrappedPayload.put("workflow", workflow);
+
+            return workflow;
+        }
+
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static java.util.List<Map<String, Object>> normalizeCanvasEdges(
+            java.util.List<Map<String, Object>> canvasEdges) {
+        java.util.List<Map<String, Object>> normalized = new java.util.ArrayList<>();
+
+        for (Map<String, Object> edge : canvasEdges) {
+            Map<String, Object> normalizedEdge = new java.util.HashMap<>();
+
+            String source = (String) edge.get("source");
+            String target = (String) edge.get("target");
+
+            normalizedEdge.put("source", source);
+            normalizedEdge.put("target", target);
+
+            String sourceHandle = (String) edge.get("sourceHandle");
+            String targetHandle = (String) edge.get("targetHandle");
+
+            if (sourceHandle != null && !sourceHandle.isEmpty()) {
+                normalizedEdge.put("sourceHandle", sourceHandle);
+            }
+
+            if (targetHandle != null && !targetHandle.isEmpty()) {
+                normalizedEdge.put("targetHandle", targetHandle);
+            }
+
+            boolean isControl = false;
+            Object isControlObj = edge.get("isControl");
+
+            if (isControlObj instanceof Boolean) {
+                isControl = (Boolean) isControlObj;
+            } else if (isControlObj instanceof String) {
+                isControl = "true".equalsIgnoreCase((String) isControlObj);
+            } else {
+                String type = (String) edge.get("type");
+                isControl = "control".equalsIgnoreCase(type);
+            }
+
+            normalizedEdge.put("isControl", isControl);
+
+            normalized.add(normalizedEdge);
         }
 
         return normalized;

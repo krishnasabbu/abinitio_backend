@@ -205,6 +205,39 @@ public class EndToEndExecutionVerificationTest {
     }
 
     @Test
+    public void testCanvasJsonExecution() throws Exception {
+        Map<String, Object> canvasJson = createReactCanvasWorkflow();
+        Map<String, Object> request = new HashMap<>();
+        request.putAll(canvasJson);
+
+        Map<String, Object> response = executionApiService.executeWorkflow("sequential", request);
+
+        assertNotNull(response);
+        assertEquals("running", response.get("status"));
+        String executionId = (String) response.get("execution_id");
+        assertNotNull(executionId);
+
+        verifyExecutionRecord(executionId, "Untitled Workflow");
+    }
+
+    @Test
+    public void testCanvasJsonWithMultipleJoins() throws Exception {
+        Map<String, Object> canvasJson = createComplexCanvasWorkflow();
+        Map<String, Object> request = new HashMap<>();
+        request.putAll(canvasJson);
+
+        Map<String, Object> response = executionApiService.executeWorkflow("sequential", request);
+
+        assertNotNull(response);
+        assertEquals("running", response.get("status"));
+        String executionId = (String) response.get("execution_id");
+        assertNotNull(executionId);
+        assertTrue((Integer) response.get("total_nodes") >= 5);
+
+        verifyExecutionRecord(executionId, "Untitled Workflow");
+    }
+
+    @Test
     public void testExecutionVerificationReport() throws Exception {
         Map<String, Object> workflow = createLinearWorkflow();
         Map<String, Object> request = new HashMap<>();
@@ -390,5 +423,147 @@ public class EndToEndExecutionVerificationTest {
         report.put("registeredExecutors", registeredTypes);
 
         return report;
+    }
+
+    private Map<String, Object> createReactCanvasWorkflow() {
+        Map<String, Object> workflow = new HashMap<>();
+        workflow.put("workflowName", "Untitled Workflow");
+
+        Map<String, Object> startNode = new HashMap<>();
+        startNode.put("id", "Start_1769798871535");
+        startNode.put("type", "Start");
+        startNode.put("label", "Start");
+        startNode.put("data", Map.of("config", Map.of()));
+
+        Map<String, Object> fileSourceNode1 = new HashMap<>();
+        fileSourceNode1.put("id", "FileSource_1769798905020");
+        fileSourceNode1.put("type", "FileSource");
+        fileSourceNode1.put("label", "File Source");
+        fileSourceNode1.put("data", Map.of(
+            "config", Map.of(
+                "filePath", "",
+                "fileType", "csv",
+                "delimiter", ",",
+                "header", true
+            )
+        ));
+
+        Map<String, Object> filterNode = new HashMap<>();
+        filterNode.put("id", "Filter_1769798950918");
+        filterNode.put("type", "Filter");
+        filterNode.put("label", "Filter");
+        filterNode.put("data", Map.of(
+            "config", Map.of("condition", "true")
+        ));
+
+        Map<String, Object> endNode = new HashMap<>();
+        endNode.put("id", "End_1769799000000");
+        endNode.put("type", "End");
+        endNode.put("label", "End");
+        endNode.put("data", Map.of("config", Map.of()));
+
+        List<Map<String, Object>> nodes = List.of(startNode, fileSourceNode1, filterNode, endNode);
+
+        List<Map<String, Object>> edges = List.of(
+            Map.of(
+                "source", "Start_1769798871535",
+                "target", "FileSource_1769798905020",
+                "sourceHandle", "control",
+                "targetHandle", "control",
+                "type", "control",
+                "isControl", true
+            ),
+            Map.of(
+                "source", "FileSource_1769798905020",
+                "target", "Filter_1769798950918",
+                "sourceHandle", "out",
+                "targetHandle", "in",
+                "isControl", false
+            ),
+            Map.of(
+                "source", "Filter_1769798950918",
+                "target", "End_1769799000000",
+                "sourceHandle", "out",
+                "targetHandle", "in",
+                "isControl", false
+            )
+        );
+
+        workflow.put("nodes", nodes);
+        workflow.put("edges", edges);
+        return workflow;
+    }
+
+    private Map<String, Object> createComplexCanvasWorkflow() {
+        Map<String, Object> workflow = new HashMap<>();
+        workflow.put("workflowName", "Complex Join Workflow");
+
+        Map<String, Object> startNode = new HashMap<>();
+        startNode.put("id", "Start_1");
+        startNode.put("type", "Start");
+        startNode.put("data", Map.of("config", Map.of()));
+
+        Map<String, Object> fileSource1 = new HashMap<>();
+        fileSource1.put("id", "FileSource_1");
+        fileSource1.put("type", "FileSource");
+        fileSource1.put("data", Map.of("config", Map.of("filePath", "", "fileType", "csv")));
+
+        Map<String, Object> fileSource2 = new HashMap<>();
+        fileSource2.put("id", "FileSource_2");
+        fileSource2.put("type", "FileSource");
+        fileSource2.put("data", Map.of("config", Map.of("filePath", "", "fileType", "csv")));
+
+        Map<String, Object> fileSource3 = new HashMap<>();
+        fileSource3.put("id", "FileSource_3");
+        fileSource3.put("type", "FileSource");
+        fileSource3.put("data", Map.of("config", Map.of("filePath", "", "fileType", "csv")));
+
+        Map<String, Object> join1 = new HashMap<>();
+        join1.put("id", "Join_1");
+        join1.put("type", "Join");
+        join1.put("data", Map.of("config", Map.of(
+            "joinType", "inner",
+            "leftKeys", "",
+            "rightKeys", ""
+        )));
+
+        Map<String, Object> join2 = new HashMap<>();
+        join2.put("id", "Join_2");
+        join2.put("type", "Join");
+        join2.put("data", Map.of("config", Map.of(
+            "joinType", "inner",
+            "leftKeys", "",
+            "rightKeys", ""
+        )));
+
+        Map<String, Object> fileSink = new HashMap<>();
+        fileSink.put("id", "FileSink_1");
+        fileSink.put("type", "FileSink");
+        fileSink.put("data", Map.of("config", Map.of("outputPath", "", "fileType", "csv")));
+
+        Map<String, Object> endNode = new HashMap<>();
+        endNode.put("id", "End_1");
+        endNode.put("type", "End");
+        endNode.put("data", Map.of("config", Map.of()));
+
+        List<Map<String, Object>> nodes = List.of(
+            startNode, fileSource1, fileSource2, fileSource3, join1, join2, fileSink, endNode
+        );
+
+        List<Map<String, Object>> edges = List.of(
+            Map.of("source", "Start_1", "target", "FileSource_1", "isControl", true),
+            Map.of("source", "Start_1", "target", "FileSource_2", "isControl", true),
+            Map.of("source", "Start_1", "target", "FileSource_3", "isControl", true),
+            Map.of("source", "FileSource_1", "target", "Join_1", "sourceHandle", "out", "targetHandle", "left"),
+            Map.of("source", "FileSource_2", "target", "Join_1", "sourceHandle", "out", "targetHandle", "right"),
+            Map.of("source", "Join_1", "target", "Join_2", "sourceHandle", "out", "targetHandle", "left"),
+            Map.of("source", "FileSource_3", "target", "Join_2", "sourceHandle", "out", "targetHandle", "right"),
+            Map.of("source", "Join_2", "target", "FileSink_1", "sourceHandle", "out", "targetHandle", "in"),
+            Map.of("source", "FileSink_1", "target", "End_1", "isControl", true)
+        );
+
+        workflow.put("nodes", nodes);
+        workflow.put("edges", edges);
+        return workflow;
     }
 }
