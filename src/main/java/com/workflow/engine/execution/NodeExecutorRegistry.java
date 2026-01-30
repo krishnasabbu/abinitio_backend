@@ -5,18 +5,24 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Central registry for all node executor implementations in the workflow engine.
  *
  * Maintains a mapping of node type identifiers to their corresponding executor implementations.
- * Provides lookup and availability checking for executors at runtime. This registry is populated
- * by Spring's component scanning, which automatically discovers and registers all bean instances
- * that implement the NodeExecutor interface.
+ * Automatically discovers and registers all Spring beans implementing NodeExecutor at startup.
+ * Provides lookup and availability checking for executors at runtime.
  *
- * Thread safety: Thread-safe for read operations after initialization. Registration should occur
- * during application startup before concurrent access.
+ * Auto-registration (constructor injection):
+ * - Spring injects all NodeExecutor beans
+ * - Each executor's nodeType is extracted via getNodeType()
+ * - Duplicate nodeTypes cause startup failure with detailed diagnostics
+ * - Summary logged at startup showing all registered executor types
+ *
+ * Thread safety: Thread-safe for read operations after initialization.
  *
  * @author Workflow Engine
  * @version 1.0
@@ -29,17 +35,101 @@ public class NodeExecutorRegistry {
     private final Map<String, NodeExecutor<?, ?>> executors = new HashMap<>();
 
     /**
+     * Constructs the registry and auto-registers all NodeExecutor beans.
+     *
+     * Spring automatically injects all beans implementing NodeExecutor. Each executor's
+     * node type is extracted and registered. Duplicate types cause IllegalStateException.
+     *
+     * @param executorBeans list of all NodeExecutor bean instances discovered by Spring
+     * @throws IllegalStateException if two executors return the same node type
+     * @throws IllegalArgumentException if executor returns null/blank node type
+     */
+    public NodeExecutorRegistry(List<NodeExecutor<?, ?>> executorBeans) {
+        logger.debug("Initializing NodeExecutorRegistry with {} executor beans", executorBeans.size());
+
+        for (NodeExecutor<?, ?> executor : executorBeans) {
+            String nodeType = executor.getNodeType();
+
+            if (nodeType == null || nodeType.trim().isEmpty()) {
+                logger.error("Executor {} returned null or empty node type", executor.getClass().getSimpleName());
+                throw new IllegalArgumentException(
+                    "Executor " + executor.getClass().getName() + " returned null or empty node type"
+                );
+            }
+
+            String trimmedType = nodeType.trim();
+
+            if (executors.containsKey(trimmedType)) {
+                String existingClass = executors.get(trimmedType).getClass().getSimpleName();
+                String duplicateClass = executor.getClass().getSimpleName();
+                logger.error(
+                    "Duplicate executor registration for nodeType='{}'. Existing: {}, Duplicate: {}",
+                    trimmedType, existingClass, duplicateClass
+                );
+                throw new IllegalStateException(
+                    "Duplicate executor registration for nodeType='" + trimmedType + "'. " +
+                    "Existing: " + existingClass + ", Duplicate: " + duplicateClass
+                );
+            }
+
+            executors.put(trimmedType, executor);
+            logger.debug("Registered executor for node type '{}': {}", trimmedType, executor.getClass().getSimpleName());
+        }
+
+        logRegistrySummary();
+    }
+
+    /**
+     * Logs a summary of all registered executors at startup.
+     *
+     * Displays the complete list of registered node types and their executor classes.
+     */
+    private void logRegistrySummary() {
+        List<String> sortedKeys = executors.keySet().stream()
+            .sorted()
+            .collect(Collectors.toList());
+
+        logger.info("NodeExecutorRegistry initialized with {} registered executors", executors.size());
+        logger.info("Registered node types: {}", sortedKeys);
+
+        for (String nodeType : sortedKeys) {
+            String executorClass = executors.get(nodeType).getClass().getSimpleName();
+            logger.debug("Node type '{}' -> {}", nodeType, executorClass);
+        }
+    }
+
+    /**
      * Registers a node executor in the registry.
      *
-     * Maps the executor's node type identifier to the executor instance. If an executor
-     * with the same node type already exists, it will be replaced.
+     * Maps the executor's node type identifier to the executor instance. Useful for
+     * runtime registration after initialization (e.g., custom executors).
      *
      * @param executor the executor to register
+     * @throws IllegalStateException if the node type is already registered
      */
     public void register(NodeExecutor<?, ?> executor) {
         String nodeType = executor.getNodeType();
-        executors.put(nodeType, executor);
-        logger.debug("Registered executor for node type: {}", nodeType);
+
+        if (nodeType == null || nodeType.trim().isEmpty()) {
+            logger.error("Cannot register executor {} with null/empty node type", executor.getClass().getSimpleName());
+            throw new IllegalArgumentException("Node type cannot be null or empty");
+        }
+
+        String trimmedType = nodeType.trim();
+
+        if (executors.containsKey(trimmedType)) {
+            String existingClass = executors.get(trimmedType).getClass().getSimpleName();
+            logger.error(
+                "Cannot register executor for nodeType='{}' - already registered to {}",
+                trimmedType, existingClass
+            );
+            throw new IllegalStateException(
+                "Executor already registered for nodeType='" + trimmedType + "'"
+            );
+        }
+
+        executors.put(trimmedType, executor);
+        logger.info("Runtime registered executor for node type '{}': {}", trimmedType, executor.getClass().getSimpleName());
     }
 
     /**
@@ -53,8 +143,14 @@ public class NodeExecutorRegistry {
         logger.debug("Looking up executor for node type: {}", nodeType);
         NodeExecutor<?, ?> executor = executors.get(nodeType);
         if (executor == null) {
-            logger.error("No executor registered for node type: {}", nodeType);
-            throw new IllegalArgumentException("No executor registered for node type: " + nodeType);
+            List<String> available = executors.keySet().stream().sorted().collect(Collectors.toList());
+            logger.error(
+                "No executor registered for nodeType='{}'. Available types: {}",
+                nodeType, available
+            );
+            throw new IllegalArgumentException(
+                "No executor registered for nodeType='" + nodeType + "'. Available: " + available
+            );
         }
         return executor;
     }
@@ -84,5 +180,14 @@ public class NodeExecutorRegistry {
         } else {
             logger.warn("Attempted to unregister non-existent executor for node type: {}", nodeType);
         }
+    }
+
+    /**
+     * Returns the total count of registered executors.
+     *
+     * @return number of registered executor types
+     */
+    public int getExecutorCount() {
+        return executors.size();
     }
 }

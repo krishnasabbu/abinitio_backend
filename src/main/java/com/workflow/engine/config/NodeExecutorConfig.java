@@ -72,148 +72,28 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * Configuration for node executor auto-registration.
+ *
+ * DEPRECATED: With auto-registration via NodeExecutorRegistry constructor injection,
+ * manual registration is no longer needed. Kept for backward compatibility only.
+ * All @Component NodeExecutor beans are automatically discovered and registered
+ * at application startup.
+ */
 @Configuration
 public class NodeExecutorConfig {
 
+    /**
+     * Legacy registration bean (no-op).
+     *
+     * Replaced by automatic constructor-injection registration in NodeExecutorRegistry.
+     * This method is kept to avoid breaking existing configuration references.
+     *
+     * @return a no-op CommandLineRunner
+     */
     @Bean
-    public CommandLineRunner registerExecutors(
-        NodeExecutorRegistry registry,
-        FileSourceExecutor fileSourceExecutor,
-        FileSinkExecutor fileSinkExecutor,
-        ReformatExecutor reformatExecutor,
-        FilterExecutor filterExecutor,
-        ValidateExecutor validateExecutor,
-        RejectExecutor rejectExecutor,
-        ErrorSinkExecutor errorSinkExecutor,
-        DBSourceExecutor dbSourceExecutor,
-        DBSinkExecutor dbSinkExecutor,
-        ComputeExecutor computeExecutor,
-        MapExecutor mapExecutor,
-        NormalizeExecutor normalizeExecutor,
-        DenormalizeExecutor denormalizeExecutor,
-        SampleExecutor sampleExecutor,
-        LimitExecutor limitExecutor,
-        CountExecutor countExecutor,
-        AssertExecutor assertExecutor,
-        StartExecutor startExecutor,
-        EndExecutor endExecutor,
-        FailJobExecutor failJobExecutor,
-        DecisionExecutor decisionExecutor,
-        SwitchExecutor switchExecutor,
-        SortExecutor sortExecutor,
-        AggregateExecutor aggregateExecutor,
-        SchemaValidatorExecutor schemaValidatorExecutor,
-        JoinExecutor joinExecutor,
-        LookupExecutor lookupExecutor,
-        MergeExecutor mergeExecutor,
-        DeduplicateExecutor deduplicateExecutor,
-        IntersectExecutor intersectExecutor,
-        MinusExecutor minusExecutor,
-        PartitionExecutor partitionExecutor,
-        HashPartitionExecutor hashPartitionExecutor,
-        RangePartitionExecutor rangePartitionExecutor,
-        ReplicateExecutor replicateExecutor,
-        BroadcastExecutor broadcastExecutor,
-        CollectExecutor collectExecutor,
-        AlertExecutor alertExecutor,
-        AuditExecutor auditExecutor,
-        CheckpointExecutor checkpointExecutor,
-        ResumeExecutor resumeExecutor,
-        SLAExecutor slaExecutor,
-        ThrottleExecutor throttleExecutor,
-        WaitExecutor waitExecutor,
-        JobConditionExecutor jobConditionExecutor,
-        SplitExecutor splitExecutor,
-        GatherExecutor gatherExecutor,
-        KafkaSourceExecutor kafkaSourceExecutor,
-        KafkaSinkExecutor kafkaSinkExecutor,
-        RestAPISourceExecutor restAPISourceExecutor,
-        RestAPISinkExecutor restAPISinkExecutor,
-        DBExecuteExecutor dbExecuteExecutor,
-        XMLParseExecutor xmlParseExecutor,
-        XMLValidateExecutor xmlValidateExecutor,
-        JSONFlattenExecutor jsonFlattenExecutor,
-        JSONExplodeExecutor jsonExplodeExecutor,
-        RollupExecutor rollupExecutor,
-        WindowExecutor windowExecutor,
-        ScanExecutor scanExecutor,
-        EncryptExecutor encryptExecutor,
-        DecryptExecutor decryptExecutor,
-        PythonNodeExecutor pythonNodeExecutor,
-        ScriptNodeExecutor scriptNodeExecutor,
-        ShellNodeExecutor shellNodeExecutor,
-        CustomNodeExecutor customNodeExecutor,
-        SubgraphExecutor subgraphExecutor,
-        WebServiceCallExecutor webServiceCallExecutor
-    ) {
+    public CommandLineRunner registerExecutors(NodeExecutorRegistry registry) {
         return args -> {
-            registry.register(fileSourceExecutor);
-            registry.register(fileSinkExecutor);
-            registry.register(reformatExecutor);
-            registry.register(filterExecutor);
-            registry.register(validateExecutor);
-            registry.register(rejectExecutor);
-            registry.register(errorSinkExecutor);
-            registry.register(dbSourceExecutor);
-            registry.register(dbSinkExecutor);
-            registry.register(computeExecutor);
-            registry.register(mapExecutor);
-            registry.register(normalizeExecutor);
-            registry.register(denormalizeExecutor);
-            registry.register(sampleExecutor);
-            registry.register(limitExecutor);
-            registry.register(countExecutor);
-            registry.register(assertExecutor);
-            registry.register(startExecutor);
-            registry.register(endExecutor);
-            registry.register(failJobExecutor);
-            registry.register(decisionExecutor);
-            registry.register(switchExecutor);
-            registry.register(sortExecutor);
-            registry.register(aggregateExecutor);
-            registry.register(schemaValidatorExecutor);
-            registry.register(joinExecutor);
-            registry.register(lookupExecutor);
-            registry.register(mergeExecutor);
-            registry.register(deduplicateExecutor);
-            registry.register(intersectExecutor);
-            registry.register(minusExecutor);
-            registry.register(partitionExecutor);
-            registry.register(hashPartitionExecutor);
-            registry.register(rangePartitionExecutor);
-            registry.register(replicateExecutor);
-            registry.register(broadcastExecutor);
-            registry.register(collectExecutor);
-            registry.register(alertExecutor);
-            registry.register(auditExecutor);
-            registry.register(checkpointExecutor);
-            registry.register(resumeExecutor);
-            registry.register(slaExecutor);
-            registry.register(throttleExecutor);
-            registry.register(waitExecutor);
-            registry.register(jobConditionExecutor);
-            registry.register(splitExecutor);
-            registry.register(gatherExecutor);
-            registry.register(kafkaSourceExecutor);
-            registry.register(kafkaSinkExecutor);
-            registry.register(restAPISourceExecutor);
-            registry.register(restAPISinkExecutor);
-            registry.register(dbExecuteExecutor);
-            registry.register(xmlParseExecutor);
-            registry.register(xmlValidateExecutor);
-            registry.register(jsonFlattenExecutor);
-            registry.register(jsonExplodeExecutor);
-            registry.register(rollupExecutor);
-            registry.register(windowExecutor);
-            registry.register(scanExecutor);
-            registry.register(encryptExecutor);
-            registry.register(decryptExecutor);
-            registry.register(pythonNodeExecutor);
-            registry.register(scriptNodeExecutor);
-            registry.register(shellNodeExecutor);
-            registry.register(customNodeExecutor);
-            registry.register(subgraphExecutor);
-            registry.register(webServiceCallExecutor);
         };
     }
 }
