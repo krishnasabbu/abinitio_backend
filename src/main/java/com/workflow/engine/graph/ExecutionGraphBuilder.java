@@ -1,6 +1,7 @@
 package com.workflow.engine.graph;
 
 import com.workflow.engine.execution.routing.OutputPort;
+import com.workflow.engine.execution.NodeExecutorRegistry;
 import com.workflow.engine.model.*;
 import org.springframework.stereotype.Component;
 
@@ -9,6 +10,12 @@ import java.util.stream.Collectors;
 
 @Component
 public class ExecutionGraphBuilder {
+
+    private final NodeExecutorRegistry nodeExecutorRegistry;
+
+    public ExecutionGraphBuilder(NodeExecutorRegistry nodeExecutorRegistry) {
+        this.nodeExecutorRegistry = nodeExecutorRegistry;
+    }
 
     public ExecutionPlan build(WorkflowDefinition workflow) {
         List<NodeDefinition> nodes = workflow.getNodes();
@@ -73,6 +80,22 @@ public class ExecutionGraphBuilder {
         validateSinkNodes(nodes, edges);
         validateControlOnlyNodes(nodes, edges);
         validateEdgeCompatibility(edges, nodes);
+        validateNodeExecutorsExist(nodes);
+    }
+
+    private void validateNodeExecutorsExist(List<NodeDefinition> nodes) {
+        List<String> missingExecutors = new ArrayList<>();
+        for (NodeDefinition node : nodes) {
+            String nodeType = node.getType();
+            if (!nodeExecutorRegistry.hasExecutor(nodeType)) {
+                missingExecutors.add(nodeType);
+            }
+        }
+        if (!missingExecutors.isEmpty()) {
+            throw new GraphValidationException(
+                "No executor registered for node types: " + missingExecutors +
+                ". Cannot execute workflow. Please ensure all node types have corresponding executors.");
+        }
     }
 
     private boolean hasCycles(List<NodeDefinition> nodes, List<Edge> edges) {

@@ -44,6 +44,30 @@ import com.workflow.engine.execution.StartExecutor;
 import com.workflow.engine.execution.SwitchExecutor;
 import com.workflow.engine.execution.ThrottleExecutor;
 import com.workflow.engine.execution.ValidateExecutor;
+import com.workflow.engine.execution.WaitExecutor;
+import com.workflow.engine.execution.JobConditionExecutor;
+import com.workflow.engine.execution.SplitExecutor;
+import com.workflow.engine.execution.GatherExecutor;
+import com.workflow.engine.execution.KafkaSourceExecutor;
+import com.workflow.engine.execution.KafkaSinkExecutor;
+import com.workflow.engine.execution.RestAPISourceExecutor;
+import com.workflow.engine.execution.RestAPISinkExecutor;
+import com.workflow.engine.execution.DBExecuteExecutor;
+import com.workflow.engine.execution.XMLParseExecutor;
+import com.workflow.engine.execution.XMLValidateExecutor;
+import com.workflow.engine.execution.JSONFlattenExecutor;
+import com.workflow.engine.execution.JSONExplodeExecutor;
+import com.workflow.engine.execution.RollupExecutor;
+import com.workflow.engine.execution.WindowExecutor;
+import com.workflow.engine.execution.ScanExecutor;
+import com.workflow.engine.execution.EncryptExecutor;
+import com.workflow.engine.execution.DecryptExecutor;
+import com.workflow.engine.execution.PythonNodeExecutor;
+import com.workflow.engine.execution.ScriptNodeExecutor;
+import com.workflow.engine.execution.ShellNodeExecutor;
+import com.workflow.engine.execution.CustomNodeExecutor;
+import com.workflow.engine.execution.SubgraphExecutor;
+import com.workflow.engine.execution.WebServiceCallExecutor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -96,7 +120,31 @@ public class NodeExecutorConfig {
         CheckpointExecutor checkpointExecutor,
         ResumeExecutor resumeExecutor,
         SLAExecutor slaExecutor,
-        ThrottleExecutor throttleExecutor
+        ThrottleExecutor throttleExecutor,
+        WaitExecutor waitExecutor,
+        JobConditionExecutor jobConditionExecutor,
+        SplitExecutor splitExecutor,
+        GatherExecutor gatherExecutor,
+        KafkaSourceExecutor kafkaSourceExecutor,
+        KafkaSinkExecutor kafkaSinkExecutor,
+        RestAPISourceExecutor restAPISourceExecutor,
+        RestAPISinkExecutor restAPISinkExecutor,
+        DBExecuteExecutor dbExecuteExecutor,
+        XMLParseExecutor xmlParseExecutor,
+        XMLValidateExecutor xmlValidateExecutor,
+        JSONFlattenExecutor jsonFlattenExecutor,
+        JSONExplodeExecutor jsonExplodeExecutor,
+        RollupExecutor rollupExecutor,
+        WindowExecutor windowExecutor,
+        ScanExecutor scanExecutor,
+        EncryptExecutor encryptExecutor,
+        DecryptExecutor decryptExecutor,
+        PythonNodeExecutor pythonNodeExecutor,
+        ScriptNodeExecutor scriptNodeExecutor,
+        ShellNodeExecutor shellNodeExecutor,
+        CustomNodeExecutor customNodeExecutor,
+        SubgraphExecutor subgraphExecutor,
+        WebServiceCallExecutor webServiceCallExecutor
     ) {
         return args -> {
             registry.register(fileSourceExecutor);
@@ -142,6 +190,30 @@ public class NodeExecutorConfig {
             registry.register(resumeExecutor);
             registry.register(slaExecutor);
             registry.register(throttleExecutor);
+            registry.register(waitExecutor);
+            registry.register(jobConditionExecutor);
+            registry.register(splitExecutor);
+            registry.register(gatherExecutor);
+            registry.register(kafkaSourceExecutor);
+            registry.register(kafkaSinkExecutor);
+            registry.register(restAPISourceExecutor);
+            registry.register(restAPISinkExecutor);
+            registry.register(dbExecuteExecutor);
+            registry.register(xmlParseExecutor);
+            registry.register(xmlValidateExecutor);
+            registry.register(jsonFlattenExecutor);
+            registry.register(jsonExplodeExecutor);
+            registry.register(rollupExecutor);
+            registry.register(windowExecutor);
+            registry.register(scanExecutor);
+            registry.register(encryptExecutor);
+            registry.register(decryptExecutor);
+            registry.register(pythonNodeExecutor);
+            registry.register(scriptNodeExecutor);
+            registry.register(shellNodeExecutor);
+            registry.register(customNodeExecutor);
+            registry.register(subgraphExecutor);
+            registry.register(webServiceCallExecutor);
         };
     }
 }

@@ -6,6 +6,7 @@ import com.workflow.engine.api.dto.NodeExecutionDto;
 import com.workflow.engine.api.persistence.ExecutionLogWriter;
 import com.workflow.engine.api.persistence.PersistenceJobListener;
 import com.workflow.engine.api.persistence.PersistenceStepListener;
+import com.workflow.engine.api.util.PayloadNormalizer;
 import com.workflow.engine.execution.job.DynamicJobBuilder;
 import com.workflow.engine.execution.job.StepFactory;
 import com.workflow.engine.graph.ExecutionGraphBuilder;
@@ -61,6 +62,9 @@ public class ExecutionApiService {
         long startTime = System.currentTimeMillis();
 
         try {
+            // Normalize payload to handle both frontend and backend formats
+            request = PayloadNormalizer.normalize(request);
+
             // Parse workflow definition from request
             @SuppressWarnings("unchecked")
             Map<String, Object> workflowData = (Map<String, Object>) request.get("workflow");
