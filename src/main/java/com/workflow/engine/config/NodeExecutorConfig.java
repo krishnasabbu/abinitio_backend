@@ -1,5 +1,6 @@
 package com.workflow.engine.config;
 
+import com.workflow.engine.execution.FileSinkExecutor;
 import com.workflow.engine.execution.FileSourceExecutor;
 import com.workflow.engine.execution.NodeExecutorRegistry;
 import org.springframework.boot.CommandLineRunner;
@@ -12,10 +13,12 @@ public class NodeExecutorConfig {
     @Bean
     public CommandLineRunner registerExecutors(
         NodeExecutorRegistry registry,
-        FileSourceExecutor fileSourceExecutor
+        FileSourceExecutor fileSourceExecutor,
+        FileSinkExecutor fileSinkExecutor
     ) {
         return args -> {
             registry.register(fileSourceExecutor);
+            registry.register(fileSinkExecutor);
         };
     }
 }
