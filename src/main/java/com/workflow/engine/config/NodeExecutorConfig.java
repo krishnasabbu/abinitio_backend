@@ -1,8 +1,11 @@
 package com.workflow.engine.config;
 
 import com.workflow.engine.execution.AggregateExecutor;
+import com.workflow.engine.execution.AlertExecutor;
 import com.workflow.engine.execution.AssertExecutor;
+import com.workflow.engine.execution.AuditExecutor;
 import com.workflow.engine.execution.BroadcastExecutor;
+import com.workflow.engine.execution.CheckpointExecutor;
 import com.workflow.engine.execution.CollectExecutor;
 import com.workflow.engine.execution.ComputeExecutor;
 import com.workflow.engine.execution.CountExecutor;
@@ -32,11 +35,14 @@ import com.workflow.engine.execution.RangePartitionExecutor;
 import com.workflow.engine.execution.ReformatExecutor;
 import com.workflow.engine.execution.RejectExecutor;
 import com.workflow.engine.execution.ReplicateExecutor;
+import com.workflow.engine.execution.ResumeExecutor;
 import com.workflow.engine.execution.SampleExecutor;
 import com.workflow.engine.execution.SchemaValidatorExecutor;
+import com.workflow.engine.execution.SLAExecutor;
 import com.workflow.engine.execution.SortExecutor;
 import com.workflow.engine.execution.StartExecutor;
 import com.workflow.engine.execution.SwitchExecutor;
+import com.workflow.engine.execution.ThrottleExecutor;
 import com.workflow.engine.execution.ValidateExecutor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
@@ -84,7 +90,13 @@ public class NodeExecutorConfig {
         RangePartitionExecutor rangePartitionExecutor,
         ReplicateExecutor replicateExecutor,
         BroadcastExecutor broadcastExecutor,
-        CollectExecutor collectExecutor
+        CollectExecutor collectExecutor,
+        AlertExecutor alertExecutor,
+        AuditExecutor auditExecutor,
+        CheckpointExecutor checkpointExecutor,
+        ResumeExecutor resumeExecutor,
+        SLAExecutor slaExecutor,
+        ThrottleExecutor throttleExecutor
     ) {
         return args -> {
             registry.register(fileSourceExecutor);
@@ -124,6 +136,12 @@ public class NodeExecutorConfig {
             registry.register(replicateExecutor);
             registry.register(broadcastExecutor);
             registry.register(collectExecutor);
+            registry.register(alertExecutor);
+            registry.register(auditExecutor);
+            registry.register(checkpointExecutor);
+            registry.register(resumeExecutor);
+            registry.register(slaExecutor);
+            registry.register(throttleExecutor);
         };
     }
 }
