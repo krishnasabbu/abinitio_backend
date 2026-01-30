@@ -1,0 +1,183 @@
+COMPREHENSIVE NODE EXECUTOR AUDIT
+==================================
+
+Source: nodes.ts (provided frontend definitions)
+Codebase: src/main/java/com/workflow/engine/execution/
+
+AUDIT RESULTS:
+===============
+
+CONTROL FLOW NODES:
+-------------------
+✗ Start            - Not implemented. Required for job entry point.
+✗ End              - Not implemented. Required for job completion.
+✗ FailJob          - Not implemented. Required for explicit job failure.
+✗ Wait             - Not implemented. Advanced feature (pausable workflows).
+✗ JobCondition     - Not implemented. Required for conditional branching.
+
+DATA SOURCES:
+--------------
+✓ FileSource       - IMPLEMENTED (FileSourceExecutor)
+✓ FileSink         - IMPLEMENTED (FileSinkExecutor)
+✓ DBSource         - IMPLEMENTED (DBSourceExecutor)
+✓ DBSink           - IMPLEMENTED (DBSinkExecutor)
+✗ KafkaSource      - Not implemented (streaming I/O, Phase-2)
+✗ KafkaSink        - Not implemented (streaming I/O, Phase-2)
+
+ROW-LEVEL TRANSFORMATIONS:
+---------------------------
+✓ Reformat         - IMPLEMENTED (ReformatExecutor)
+✓ Compute          - IMPLEMENTED (ComputeExecutor) - Phase-1
+✓ Map              - IMPLEMENTED (MapExecutor) - Phase-1
+✓ Normalize        - IMPLEMENTED (NormalizeExecutor) - Phase-1
+✓ Denormalize      - IMPLEMENTED (DenormalizeExecutor) - Phase-1
+
+FILTERING & ROUTING:
+---------------------
+✓ Filter           - IMPLEMENTED (FilterExecutor)
+✗ Decision         - Not implemented. Multi-output routing node.
+✗ Switch           - Not implemented. Rule-based routing.
+✗ Split            - Not implemented. Dataset duplication.
+✗ Gather           - Not implemented. Stream merging.
+✓ Reject           - IMPLEMENTED (RejectExecutor)
+
+JOINS & LOOKUPS:
+-----------------
+✗ Join             - Not implemented. Complex multi-input operation.
+✗ Lookup           - Not implemented. Reference dataset matching.
+✗ Merge            - Not implemented. Sorted stream merging.
+✗ Deduplicate      - Not implemented. Duplicate removal.
+✗ Intersect        - Not implemented. Set intersection.
+✗ Minus            - Not implemented. Set difference.
+
+SORTING & AGGREGATION:
+------------------------
+✗ Sort             - Not implemented. Dataset ordering.
+✗ Aggregate        - Not implemented. Group-by + aggregation.
+✗ Rollup           - Not implemented. Hierarchical aggregation.
+✗ Window           - Not implemented. Window functions.
+✗ Scan             - Not implemented. Running totals.
+
+UTILITY & VALIDATION:
+------------------------
+✓ Validate         - IMPLEMENTED (ValidateExecutor)
+✓ Assert           - IMPLEMENTED (AssertExecutor) - Phase-1
+✓ Sample           - IMPLEMENTED (SampleExecutor) - Phase-1
+✓ Count            - IMPLEMENTED (CountExecutor) - Phase-1
+✓ Limit            - IMPLEMENTED (LimitExecutor) - Phase-1
+✗ Checkpoint       - Not implemented. Persistence point.
+✗ SchemaValidator  - Not implemented. Schema validation.
+✓ ErrorSink        - IMPLEMENTED (ErrorSinkExecutor)
+
+PARTITIONING & DISTRIBUTION:
+------------------------------
+✗ Partition        - Not implemented. Basic partitioning.
+✗ HashPartition    - Not implemented. Hash-based partitioning.
+✗ RangePartition   - Not implemented. Range-based partitioning.
+✗ Replicate        - Not implemented. Dataset replication.
+✗ Broadcast        - Not implemented. Small dataset broadcast.
+✗ Collect          - Not implemented. Partition collection.
+
+CUSTOM & PROGRAMMATIC:
+-------------------------
+✗ PythonNode       - Not implemented. Python code execution (risky).
+✗ ScriptNode       - Not implemented. Script execution.
+✗ ShellNode        - Not implemented. Shell command execution.
+✗ CustomNode       - Not implemented. Custom component loading.
+✗ WebServiceCall   - Not implemented. Dynamic web service invocation.
+✗ RestAPISource    - Not implemented. REST API polling source.
+✗ RestAPISink      - Not implemented. REST API sink.
+✗ Subgraph         - Not implemented. Nested workflow reference.
+
+XML PROCESSING:
+-----------------
+✗ XMLSplit         - Not implemented. XML record splitting.
+✗ XMLCombine       - Not implemented. XML structure generation.
+✗ XMLParse         - Not implemented. XML parsing & extraction.
+✗ XMLValidate      - Not implemented. XSD validation.
+
+JSON PROCESSING:
+------------------
+✗ JSONFlatten      - Not implemented. JSON flattening.
+✗ JSONExplode      - Not implemented. JSON array explosion.
+
+ENCRYPTION:
+--------------
+✗ Encrypt          - Not implemented. Field encryption.
+✗ Decrypt          - Not implemented. Field decryption.
+
+DATABASE OPERATIONS:
+----------------------
+✗ DBExecute        - Not implemented. Dynamic SQL execution.
+
+SUMMARY:
+========
+Total node types in nodes.ts: 70
+Implemented executors: 16
+  - Phase-1 complete: 8 (Compute, Map, Normalize, Denormalize, Sample, Limit, Count, Assert)
+  - Existing working: 8 (File/DB/Filter/Validate/Reject/Error/Reformat)
+Missing executors: 54
+
+PRIORITY IMPLEMENTATION PLAN:
+=============================
+
+TIER-1 (CRITICAL - Required for basic workflows):
+--------------------------------------------------
+1. Start                - Job entry point
+2. End                  - Job completion
+3. FailJob             - Explicit failure
+4. Decision            - Conditional branching
+5. Switch              - Multi-condition routing
+6. Sort                - Dataset ordering
+7. Aggregate           - Group-by + stats
+8. SchemaValidator     - Input validation
+
+TIER-2 (IMPORTANT - Enhances workflow capability):
+--------------------------------------------------
+9. Split               - Stream replication
+10. Gather             - Stream merging
+11. Partition          - Data distribution
+12. Collect            - Partition collection
+13. Merge              - Sorted stream merging
+14. Deduplicate        - Duplicate removal
+15. Rollup             - Hierarchical aggregation
+16. Window             - Advanced analytics
+17. Scan               - Running aggregates
+18. Checkpoint         - State persistence
+
+TIER-3 (NICE-TO-HAVE - Specialized features):
+-----------------------------------------------
+19-30. XML/JSON processing (XMLSplit, XMLParse, JSONFlatten, etc.)
+31-40. REST/Web operations (RestAPISource, RestAPISink, WebServiceCall)
+41-50. Script execution (PythonNode, ScriptNode, ShellNode)
+51+. Kafka/Streaming, Encryption, Advanced lookups
+
+IMPLEMENTATION STRATEGY:
+=========================
+
+Phase-1 (DONE):
+- Compute, Map, Normalize, Denormalize, Sample, Limit, Count, Assert
+
+Phase-2 (RECOMMENDED NEXT):
+- Control flow: Start, End, FailJob (required for executability)
+- Routing: Decision, Switch, Split, Gather (enables complex workflows)
+- Aggregation: Sort, Aggregate (common operations)
+- Schema: SchemaValidator (data quality gate)
+
+Phase-3 (DEFERRED):
+- Advanced joins/lookups (complex multi-stream handling)
+- XML/JSON processing (specialized domains)
+- Kafka/streaming (infrastructure dependent)
+- Script execution (security concerns)
+- Encryption (cryptography complexity)
+
+NOTES:
+======
+- All new executors follow NodeExecutor<I,O> pattern
+- All validate config and fail fast
+- All support metrics (supportsMetrics() = true)
+- All support failure handling (supportsFailureHandling() = true)
+- Multi-output nodes (Decision, Switch, Split) require engine routing support
+- Stream merging nodes (Gather, Collect) require multi-input support
+- Control nodes (Start, End) may interact with graph builder directly
+
