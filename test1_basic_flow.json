@@ -1,0 +1,46 @@
+{
+  "id": "test1",
+  "name": "test_basic_flow",
+  "nodes": [
+    {
+      "id": "Start_1",
+      "type": "Start",
+      "config": {}
+    },
+    {
+      "id": "FileSource_1",
+      "type": "FileSource",
+      "config": {
+        "filePath": "./data/input/basic.csv",
+        "fileType": "csv",
+        "delimiter": ",",
+        "header": true
+      }
+    },
+    {
+      "id": "Reformat_1",
+      "type": "Reformat",
+      "config": {
+        "operations": [
+          { "op": "map", "from": "name", "to": "employee_name" },
+          { "op": "cast", "field": "salary", "type": "int" }
+        ]
+      }
+    },
+    {
+      "id": "FileSink_1",
+      "type": "FileSink",
+      "config": {
+        "outputPath": "./data/output/basic_out.csv",
+        "fileType": "csv",
+        "mode": "overwrite",
+        "header": true
+      }
+    }
+  ],
+  "edges": [
+    { "source": "Start_1", "target": "FileSource_1", "control": true },
+    { "source": "FileSource_1", "target": "Reformat_1", "control": false },
+    { "source": "Reformat_1", "target": "FileSink_1", "control": false }
+  ]
+}
