@@ -54,7 +54,7 @@ public class FileSinkExecutor implements NodeExecutor<Map<String, Object>, Map<S
         String mode = config.has("mode") ? config.get("mode").asText().toLowerCase() : "overwrite";
         String compression = config.has("compression") ? config.get("compression").asText().toLowerCase() : "none";
 
-        if ("json".equals(fileType) || "parquet".equals(fileType) || "excel".equals(fileType)) {
+        if ("parquet".equals(fileType) || "excel".equals(fileType)) {
             throw new UnsupportedOperationException(
                 "File type '" + fileType + "' is not implemented yet."
             );
@@ -72,6 +72,8 @@ public class FileSinkExecutor implements NodeExecutor<Map<String, Object>, Map<S
             return createCsvWriter(config, outputPath, mode, compression);
         } else if ("txt".equals(fileType)) {
             return createTxtWriter(config, outputPath, mode, compression);
+        } else if ("json".equals(fileType)) {
+            return createJsonWriter(config, outputPath, mode, compression);
         } else {
             throw new UnsupportedOperationException("File type '" + fileType + "' is not supported.");
         }
@@ -201,6 +203,30 @@ public class FileSinkExecutor implements NodeExecutor<Map<String, Object>, Map<S
         return writer;
     }
 
+    private ItemWriter<Map<String, Object>> createJsonWriter(
+        JsonNode config, String outputPath, String mode, String compression
+    ) {
+        org.springframework.batch.item.file.transform.LineAggregator<Map<String, Object>> aggregator = item -> {
+            try {
+                return objectMapper.writeValueAsString(item);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to serialize record to JSON", e);
+            }
+        };
+
+        if ("gzip".equals(compression)) {
+            return createCompressedWriter(aggregator, outputPath, mode, false, null, ",");
+        }
+
+        FlatFileItemWriter<Map<String, Object>> writer = new FlatFileItemWriter<>();
+        writer.setResource(new FileSystemResource(outputPath));
+        writer.setAppendAllowed("append".equals(mode));
+        writer.setShouldDeleteIfExists("overwrite".equals(mode));
+        writer.setLineAggregator(aggregator);
+
+        return writer;
+    }
+
     private ItemWriter<Map<String, Object>> createCompressedWriter(
         org.springframework.batch.item.file.transform.LineAggregator<Map<String, Object>> aggregator,
         String outputPath,
@@ -273,9 +299,11 @@ public class FileSinkExecutor implements NodeExecutor<Map<String, Object>, Map<S
             }
         }
 
-        String delimiter = config.has("delimiter") ? config.get("delimiter").asText() : ",";
-        if (delimiter.length() != 1) {
-            throw new IllegalArgumentException("FileSink delimiter must be a single character");
+        if (!"json".equals(fileType)) {
+            String delimiter = config.has("delimiter") ? config.get("delimiter").asText() : ",";
+            if (delimiter.length() != 1) {
+                throw new IllegalArgumentException("FileSink delimiter must be a single character");
+            }
         }
     }
 
