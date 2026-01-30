@@ -2,6 +2,8 @@ package com.workflow.engine.config;
 
 import com.workflow.engine.execution.AggregateExecutor;
 import com.workflow.engine.execution.AssertExecutor;
+import com.workflow.engine.execution.BroadcastExecutor;
+import com.workflow.engine.execution.CollectExecutor;
 import com.workflow.engine.execution.ComputeExecutor;
 import com.workflow.engine.execution.CountExecutor;
 import com.workflow.engine.execution.DBSinkExecutor;
@@ -15,6 +17,7 @@ import com.workflow.engine.execution.FailJobExecutor;
 import com.workflow.engine.execution.FileSinkExecutor;
 import com.workflow.engine.execution.FileSourceExecutor;
 import com.workflow.engine.execution.FilterExecutor;
+import com.workflow.engine.execution.HashPartitionExecutor;
 import com.workflow.engine.execution.IntersectExecutor;
 import com.workflow.engine.execution.JoinExecutor;
 import com.workflow.engine.execution.LimitExecutor;
@@ -24,8 +27,11 @@ import com.workflow.engine.execution.MergeExecutor;
 import com.workflow.engine.execution.MinusExecutor;
 import com.workflow.engine.execution.NodeExecutorRegistry;
 import com.workflow.engine.execution.NormalizeExecutor;
+import com.workflow.engine.execution.PartitionExecutor;
+import com.workflow.engine.execution.RangePartitionExecutor;
 import com.workflow.engine.execution.ReformatExecutor;
 import com.workflow.engine.execution.RejectExecutor;
+import com.workflow.engine.execution.ReplicateExecutor;
 import com.workflow.engine.execution.SampleExecutor;
 import com.workflow.engine.execution.SchemaValidatorExecutor;
 import com.workflow.engine.execution.SortExecutor;
@@ -72,7 +78,13 @@ public class NodeExecutorConfig {
         MergeExecutor mergeExecutor,
         DeduplicateExecutor deduplicateExecutor,
         IntersectExecutor intersectExecutor,
-        MinusExecutor minusExecutor
+        MinusExecutor minusExecutor,
+        PartitionExecutor partitionExecutor,
+        HashPartitionExecutor hashPartitionExecutor,
+        RangePartitionExecutor rangePartitionExecutor,
+        ReplicateExecutor replicateExecutor,
+        BroadcastExecutor broadcastExecutor,
+        CollectExecutor collectExecutor
     ) {
         return args -> {
             registry.register(fileSourceExecutor);
@@ -106,6 +118,12 @@ public class NodeExecutorConfig {
             registry.register(deduplicateExecutor);
             registry.register(intersectExecutor);
             registry.register(minusExecutor);
+            registry.register(partitionExecutor);
+            registry.register(hashPartitionExecutor);
+            registry.register(rangePartitionExecutor);
+            registry.register(replicateExecutor);
+            registry.register(broadcastExecutor);
+            registry.register(collectExecutor);
         };
     }
 }
