@@ -1,22 +1,30 @@
 package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.support.ListItemReader;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Component
 public class WebServiceCallExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
     private static final Logger logger = LoggerFactory.getLogger(WebServiceCallExecutor.class);
+    private static final ObjectMapper mapper = new ObjectMapper();
+    private final RestTemplate restTemplate = new RestTemplate();
 
     @Override
     public String getNodeType() {
@@ -33,8 +41,107 @@ public class WebServiceCallExecutor implements NodeExecutor<Map<String, Object>,
     public ItemProcessor<Map<String, Object>, Map<String, Object>> createProcessor(NodeExecutionContext context) {
         JsonNode config = context.getNodeDefinition().getConfig();
         String nodeId = context.getNodeDefinition().getId();
-        logger.debug("WebServiceCall node {} processing", nodeId);
-        return item -> item;
+        String serviceType = config.has("serviceType") ? config.get("serviceType").asText() : "REST";
+        String url = config.has("url") ? config.get("url").asText() : "";
+
+        if (url.isEmpty()) {
+            throw new IllegalArgumentException("nodeType=WebServiceCall, nodeId=" + nodeId + ", missing url");
+        }
+
+        return item -> {
+            try {
+                Map<String, Object> response = callService(url, config, item, serviceType);
+                applyResponseMapping(item, response, config);
+                return item;
+            } catch (Exception e) {
+                logger.error("WebService call failed: {}", e.getMessage());
+                throw new RuntimeException("WebService call failed", e);
+            }
+        };
+    }
+
+    private Map<String, Object> callService(String url, JsonNode config, Map<String, Object> item, String serviceType) throws Exception {
+        String method = config.has("method") ? config.get("method").asText() : "POST";
+        String body = config.has("bodyTemplate") ? config.get("bodyTemplate").asText() : mapper.writeValueAsString(item);
+
+        HttpHeaders headers = buildHeaders(config);
+        addAuthHeaders(headers, config);
+
+        String finalUrl = applyUrlParams(url, item, config);
+
+        HttpEntity<String> entity = new HttpEntity<>(body, headers);
+        ResponseEntity<String> response = restTemplate.exchange(finalUrl, HttpMethod.valueOf(method), entity, String.class);
+
+        if ("SOAP".equals(serviceType)) {
+            return parseXmlResponse(response.getBody());
+        } else {
+            return mapper.readValue(response.getBody(), Map.class);
+        }
+    }
+
+    private String applyUrlParams(String url, Map<String, Object> item, JsonNode config) {
+        String result = url;
+
+        if (config.has("urlParams")) {
+            JsonNode params = config.get("urlParams");
+            params.fields().forEachRemaining(entry -> {
+                String paramName = entry.getKey();
+                Object value = item.get(paramName);
+                String stringValue = value != null ? String.valueOf(value) : "";
+                result = result.replace(":" + paramName, stringValue);
+            });
+        }
+
+        return result;
+    }
+
+    private void applyResponseMapping(Map<String, Object> item, Map<String, Object> response, JsonNode config) {
+        if (!config.has("responseMapping")) {
+            return;
+        }
+
+        JsonNode mapping = config.get("responseMapping");
+        mapping.fields().forEachRemaining(entry -> {
+            String responseField = entry.getKey();
+            String outputField = entry.getValue().asText();
+            Object value = response.get(responseField);
+            if (value != null) {
+                item.put(outputField, value);
+            }
+        });
+    }
+
+    private Map<String, Object> parseXmlResponse(String xmlBody) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("xml", xmlBody);
+        return result;
+    }
+
+    private HttpHeaders buildHeaders(JsonNode config) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Content-Type", "application/json");
+
+        if (config.has("headers")) {
+            JsonNode headersNode = config.get("headers");
+            headersNode.fields().forEachRemaining(entry ->
+                headers.add(entry.getKey(), entry.getValue().asText())
+            );
+        }
+
+        return headers;
+    }
+
+    private void addAuthHeaders(HttpHeaders headers, JsonNode config) {
+        if (!config.has("authType")) {
+            return;
+        }
+
+        String authType = config.get("authType").asText();
+        if ("Bearer Token".equals(authType) && config.has("authKey")) {
+            headers.add("Authorization", "Bearer " + config.get("authKey").asText());
+        } else if ("API Key".equals(authType) && config.has("authKey")) {
+            headers.add("X-API-Key", config.get("authKey").asText());
+        }
     }
 
     @Override
@@ -45,9 +152,9 @@ public class WebServiceCallExecutor implements NodeExecutor<Map<String, Object>,
     @Override
     public void validate(NodeExecutionContext context) {
         JsonNode config = context.getNodeDefinition().getConfig();
-        if (config == null) {
+        if (config == null || !config.has("url")) {
             throw new IllegalArgumentException("nodeType=WebServiceCall, nodeId=" + context.getNodeDefinition().getId()
-                + ", missing config object");
+                + ", missing url");
         }
     }
 
