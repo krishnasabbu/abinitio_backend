@@ -1,6 +1,7 @@
 package com.workflow.engine.graph;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.workflow.engine.execution.routing.OutputPort;
 import com.workflow.engine.model.ExecutionHints;
 import com.workflow.engine.model.FailurePolicy;
 import com.workflow.engine.model.MetricsConfig;
@@ -16,5 +17,6 @@ public record StepNode(
     MetricsConfig metrics,
     FailurePolicy exceptionHandling,
     ExecutionHints executionHints,
-    StepClassification classification
+    StepClassification classification,
+    List<OutputPort> outputPorts
 ) {}

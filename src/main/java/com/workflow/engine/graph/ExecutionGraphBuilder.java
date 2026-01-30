@@ -1,5 +1,6 @@
 package com.workflow.engine.graph;
 
+import com.workflow.engine.execution.routing.OutputPort;
 import com.workflow.engine.model.*;
 import org.springframework.stereotype.Component;
 
@@ -31,6 +32,7 @@ public class ExecutionGraphBuilder {
 
             List<String> nextSteps = determineNextSteps(node.getId(), dataAdjacency, controlAdjacency, classification);
             List<String> errorSteps = determineErrorSteps(node.getId(), edges, nodes);
+            List<OutputPort> outputPorts = determineOutputPorts(node.getId(), edges);
 
             StepNode stepNode = new StepNode(
                 node.getId(),
@@ -41,7 +43,8 @@ public class ExecutionGraphBuilder {
                 node.getMetrics() != null ? node.getMetrics() : new MetricsConfig(),
                 node.getOnFailure() != null ? node.getOnFailure() : new FailurePolicy(),
                 node.getExecutionHints() != null ? node.getExecutionHints() : new ExecutionHints(),
-                classification
+                classification,
+                outputPorts
             );
 
             steps.put(node.getId(), stepNode);
@@ -289,5 +292,27 @@ public class ExecutionGraphBuilder {
         return "DBSink".equals(type) ||
                "FileSink".equals(type) ||
                "ErrorSink".equals(type);
+    }
+
+    private List<OutputPort> determineOutputPorts(String nodeId, List<Edge> edges) {
+        List<OutputPort> ports = new ArrayList<>();
+
+        for (Edge edge : edges) {
+            if (edge.getSource().equals(nodeId)) {
+                String sourcePort = edge.getSourceHandle() != null ? edge.getSourceHandle() : "out";
+                String targetPort = edge.getTargetHandle() != null ? edge.getTargetHandle() : "in";
+
+                OutputPort port = new OutputPort(
+                    edge.getTarget(),
+                    sourcePort,
+                    targetPort,
+                    edge.isControl()
+                );
+
+                ports.add(port);
+            }
+        }
+
+        return ports;
     }
 }

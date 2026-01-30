@@ -3,6 +3,10 @@ package com.workflow.engine.execution.job;
 import com.workflow.engine.execution.NodeExecutionContext;
 import com.workflow.engine.execution.NodeExecutor;
 import com.workflow.engine.execution.NodeExecutorRegistry;
+import com.workflow.engine.execution.routing.EdgeBufferStore;
+import com.workflow.engine.execution.routing.OutputPort;
+import com.workflow.engine.execution.routing.RoutingContext;
+import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 import com.workflow.engine.graph.StepNode;
 import com.workflow.engine.metrics.MetricsCollectionListener;
 import com.workflow.engine.metrics.MetricsCollector;
@@ -16,6 +20,8 @@ import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
+
+import java.util.List;
 
 @Component
 public class StepFactory {
@@ -37,10 +43,23 @@ public class StepFactory {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     public Step buildStep(StepNode stepNode) {
+        return buildStep(stepNode, null, null);
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public Step buildStep(StepNode stepNode, EdgeBufferStore bufferStore, String executionId) {
         NodeExecutor executor = executorRegistry.getExecutor(stepNode.nodeType());
 
         NodeDefinition nodeDefinition = createNodeDefinition(stepNode);
-        NodeExecutionContext context = new NodeExecutionContext(nodeDefinition, null);
+        NodeExecutionContext context;
+
+        if (bufferStore != null && executionId != null && hasMultipleOutputs(stepNode)) {
+            List<OutputPort> outputPorts = stepNode.outputPorts() != null ? stepNode.outputPorts() : List.of();
+            RoutingContext routingContext = new RoutingContext(executionId, stepNode.nodeId(), outputPorts, bufferStore);
+            context = new RoutingNodeExecutionContext(nodeDefinition, null, routingContext);
+        } else {
+            context = new NodeExecutionContext(nodeDefinition, null);
+        }
 
         executor.validate(context);
 
@@ -73,6 +92,11 @@ public class StepFactory {
         }
 
         return chunkBuilder.build();
+    }
+
+    private boolean hasMultipleOutputs(StepNode stepNode) {
+        List<OutputPort> ports = stepNode.outputPorts();
+        return ports != null && ports.size() > 1;
     }
 
     private int determineChunkSize(StepNode stepNode) {
