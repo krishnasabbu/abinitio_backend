@@ -1,0 +1,162 @@
+package com.workflow.engine.execution;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.batch.item.ItemProcessor;
+import org.springframework.batch.item.ItemReader;
+import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.support.ListItemReader;
+import org.springframework.expression.ExpressionParser;
+import org.springframework.expression.spel.standard.SpelExpressionParser;
+import org.springframework.expression.spel.support.StandardEvaluationContext;
+import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+@Component
+public class ValidateExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
+
+    private static final ExpressionParser parser = new SpelExpressionParser();
+
+    @Override
+    public String getNodeType() {
+        return "Validate";
+    }
+
+    @Override
+    public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        List<Map<String, Object>> items = (List<Map<String, Object>>) context.getVariable("inputItems");
+        if (items == null) {
+            items = new ArrayList<>();
+        }
+        return new ListItemReader<>(items);
+    }
+
+    @Override
+    public ItemProcessor<Map<String, Object>, Map<String, Object>> createProcessor(NodeExecutionContext context) {
+        JsonNode config = context.getNodeDefinition().getConfig();
+        String rulesStr = config.get("rules").asText();
+
+        List<ValidationRule> rules = parseRules(rulesStr);
+
+        return item -> {
+            List<String> validationErrors = new ArrayList<>();
+            List<String> failedRules = new ArrayList<>();
+
+            for (ValidationRule rule : rules) {
+                try {
+                    StandardEvaluationContext evalContext = new StandardEvaluationContext(item);
+                    Object result = parser.parseExpression(rule.expression).getValue(evalContext);
+
+                    boolean isValid = (result instanceof Boolean) && (Boolean) result;
+
+                    if (!isValid) {
+                        validationErrors.add(rule.message);
+                        failedRules.add(rule.field);
+                    }
+                } catch (Exception e) {
+                    validationErrors.add(rule.message);
+                    failedRules.add(rule.field);
+                }
+            }
+
+            if (validationErrors.isEmpty()) {
+                return item;
+            } else {
+                Map<String, Object> result = new LinkedHashMap<>(item);
+                result.put("_validationErrors", validationErrors);
+                result.put("_failedRules", failedRules);
+                return result;
+            }
+        };
+    }
+
+    @Override
+    public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
+        return items -> {
+            List<Map<String, Object>> validOutputList = new ArrayList<>();
+            List<Map<String, Object>> invalidOutputList = new ArrayList<>();
+
+            for (Map<String, Object> item : items) {
+                if (item != null) {
+                    if (item.containsKey("_validationErrors")) {
+                        invalidOutputList.add(item);
+                    } else {
+                        validOutputList.add(item);
+                    }
+                }
+            }
+
+            context.setVariable("outputItems", validOutputList);
+            context.setVariable("invalidItems", invalidOutputList);
+        };
+    }
+
+    @Override
+    public void validate(NodeExecutionContext context) {
+        JsonNode config = context.getNodeDefinition().getConfig();
+
+        if (config == null || !config.has("rules")) {
+            throw new IllegalArgumentException("Validate node requires 'rules' in config");
+        }
+
+        String rules = config.get("rules").asText();
+        if (rules == null || rules.trim().isEmpty()) {
+            throw new IllegalArgumentException("Validate 'rules' cannot be empty");
+        }
+    }
+
+    @Override
+    public boolean supportsMetrics() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsFailureHandling() {
+        return true;
+    }
+
+    private List<ValidationRule> parseRules(String rulesStr) {
+        List<ValidationRule> rules = new ArrayList<>();
+
+        if (rulesStr == null || rulesStr.trim().isEmpty()) {
+            return rules;
+        }
+
+        for (String line : rulesStr.split("\n")) {
+            line = line.trim();
+            if (!line.isEmpty()) {
+                rules.add(parseRule(line));
+            }
+        }
+
+        return rules;
+    }
+
+    private ValidationRule parseRule(String line) {
+        String[] parts = line.split(":", 3);
+
+        if (parts.length < 3) {
+            throw new IllegalArgumentException("Invalid rule format: " + line + ". Expected format: field:expression:message");
+        }
+
+        ValidationRule rule = new ValidationRule();
+        rule.field = parts[0].trim();
+        rule.expression = parts[1].trim();
+        rule.message = parts[2].trim();
+
+        if (rule.message.startsWith("\"") && rule.message.endsWith("\"")) {
+            rule.message = rule.message.substring(1, rule.message.length() - 1);
+        }
+
+        return rule;
+    }
+
+    private static class ValidationRule {
+        String field;
+        String expression;
+        String message;
+    }
+}

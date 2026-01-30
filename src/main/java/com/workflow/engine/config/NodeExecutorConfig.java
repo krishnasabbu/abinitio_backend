@@ -5,6 +5,7 @@ import com.workflow.engine.execution.FileSourceExecutor;
 import com.workflow.engine.execution.FilterExecutor;
 import com.workflow.engine.execution.NodeExecutorRegistry;
 import com.workflow.engine.execution.ReformatExecutor;
+import com.workflow.engine.execution.ValidateExecutor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,13 +19,15 @@ public class NodeExecutorConfig {
         FileSourceExecutor fileSourceExecutor,
         FileSinkExecutor fileSinkExecutor,
         ReformatExecutor reformatExecutor,
-        FilterExecutor filterExecutor
+        FilterExecutor filterExecutor,
+        ValidateExecutor validateExecutor
     ) {
         return args -> {
             registry.register(fileSourceExecutor);
             registry.register(fileSinkExecutor);
             registry.register(reformatExecutor);
             registry.register(filterExecutor);
+            registry.register(validateExecutor);
         };
     }
 }
