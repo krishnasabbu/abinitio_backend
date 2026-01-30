@@ -1,5 +1,6 @@
 package com.workflow.engine.execution.job;
 
+import com.workflow.engine.core.MdcTaskDecorator;
 import com.workflow.engine.graph.ExecutionPlan;
 import com.workflow.engine.graph.StepNode;
 import com.workflow.engine.model.ExecutionMode;
@@ -154,6 +155,7 @@ public class DynamicJobBuilder {
         FlowBuilder<SimpleFlow> splitBuilder = new FlowBuilder<>(flowName);
         SimpleAsyncTaskExecutor taskExecutor = new SimpleAsyncTaskExecutor();
         taskExecutor.setConcurrencyLimit(flows.size());
+        taskExecutor.setTaskDecorator(new MdcTaskDecorator());
 
         Flow[] flowArray = flows.toArray(new Flow[0]);
 

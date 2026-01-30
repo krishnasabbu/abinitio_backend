@@ -40,6 +40,10 @@ public class DataSourceProvider {
         cache.clear();
     }
 
+    public void invalidateCache(String connectionId) {
+        cache.remove(connectionId);
+    }
+
     public boolean hasDataSource(String connectionId) {
         if (connectionId == null || connectionId.trim().isEmpty()) {
             return false;

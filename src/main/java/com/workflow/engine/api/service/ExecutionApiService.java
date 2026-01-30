@@ -281,18 +281,18 @@ public class ExecutionApiService {
 
     public Map<String, Object> cancelExecution(String executionId) {
         try {
-            String sql = "UPDATE workflow_executions SET status = ?, end_time = ? WHERE execution_id = ? AND status = 'running'";
-            int updated = jdbcTemplate.update(sql, "cancelled", System.currentTimeMillis(), executionId);
+            String sql = "UPDATE workflow_executions SET status = ? WHERE execution_id = ? AND status = 'running'";
+            int updated = jdbcTemplate.update(sql, "cancel_requested", executionId);
 
             if (updated > 0) {
-                // Log the cancellation
+                // Log the cancellation request
                 String insertLogSql = "INSERT INTO execution_logs (timestamp, datetime, level, execution_id, message) " +
                         "VALUES (?, ?, ?, ?, ?)";
                 long timestamp = System.currentTimeMillis();
                 String datetime = new java.time.Instant.ofEpochMilli(timestamp).toString();
-                jdbcTemplate.update(insertLogSql, timestamp, datetime, "INFO", executionId, "Execution cancelled by user");
+                jdbcTemplate.update(insertLogSql, timestamp, datetime, "INFO", executionId, "Execution cancellation requested");
 
-                return Map.of("status", "cancelled", "message", "Execution cancelled successfully");
+                return Map.of("status", "cancel_requested", "message", "Execution cancellation requested");
             } else {
                 return buildErrorResponse("Execution not found or not in running state");
             }

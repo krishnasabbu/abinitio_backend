@@ -1,17 +1,43 @@
 package com.workflow.engine.execution.routing;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class EdgeBufferStore {
 
+    private static final Logger logger = LoggerFactory.getLogger(EdgeBufferStore.class);
+
     private final Map<String, List<Map<String, Object>>> buffers = new ConcurrentHashMap<>();
+    private final AtomicLong totalRecordCount = new AtomicLong(0);
+    private final long maxBufferSize;
 
     private final Object lock = new Object();
+
+    public EdgeBufferStore() {
+        this(50_000);
+    }
+
+    public EdgeBufferStore(long maxBufferSize) {
+        this.maxBufferSize = maxBufferSize;
+    }
 
     public void addRecord(String executionId, String targetNodeId, String targetPort, Map<String, Object> record) {
         String key = buildKey(executionId, targetNodeId, targetPort);
         synchronized (lock) {
+            long newCount = totalRecordCount.incrementAndGet();
+            if (newCount > maxBufferSize) {
+                totalRecordCount.decrementAndGet();
+                String errorMsg = String.format(
+                    "Edge buffer overflow for executionId=%s edge=%s:%s limit=%d",
+                    executionId, targetNodeId, targetPort, maxBufferSize
+                );
+                logger.error(errorMsg);
+                throw new RuntimeException(errorMsg);
+            }
             buffers.computeIfAbsent(key, k -> Collections.synchronizedList(new ArrayList<>()))
                    .add(record);
         }
@@ -24,7 +50,10 @@ public class EdgeBufferStore {
 
     public void clearBuffer(String executionId, String targetNodeId, String targetPort) {
         String key = buildKey(executionId, targetNodeId, targetPort);
-        buffers.remove(key);
+        List<Map<String, Object>> removed = buffers.remove(key);
+        if (removed != null) {
+            totalRecordCount.addAndGet(-removed.size());
+        }
     }
 
     public void clearExecution(String executionId) {
@@ -35,7 +64,10 @@ public class EdgeBufferStore {
             }
         }
         for (String key : keysToRemove) {
-            buffers.remove(key);
+            List<Map<String, Object>> removed = buffers.remove(key);
+            if (removed != null) {
+                totalRecordCount.addAndGet(-removed.size());
+            }
         }
     }
 

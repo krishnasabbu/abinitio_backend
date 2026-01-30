@@ -3,6 +3,7 @@ package com.workflow.engine.api.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.workflow.engine.api.dto.DatabaseConnectionDto;
 import com.workflow.engine.api.dto.KafkaConnectionDto;
+import com.workflow.engine.execution.DataSourceProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -14,6 +15,9 @@ import java.util.*;
 public class ConnectionApiService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private DataSourceProvider dataSourceProvider;
 
     private ObjectMapper objectMapper = new ObjectMapper();
 
@@ -54,11 +58,13 @@ public class ConnectionApiService {
 
         String sql = "UPDATE database_connections SET name = ?, connection_type = ?, host = ?, port = ?, database = ?, username = ?, password = ?, ssl_enabled = ?, ssl_cert = ?, additional_params = ?, is_active = ?, updated_at = ? WHERE id = ?";
         jdbcTemplate.update(sql, request.getName(), request.getConnectionType(), request.getHost(), request.getPort(), request.getDatabase(), request.getUsername(), request.getPassword(), request.getSslEnabled() != null ? request.getSslEnabled() : false, request.getSslCert(), additionalParams, request.getIsActive() != null ? request.getIsActive() : true, now, id);
+        dataSourceProvider.invalidateCache(id);
     }
 
     public void deleteDatabaseConnection(String id) {
         String sql = "DELETE FROM database_connections WHERE id = ?";
         jdbcTemplate.update(sql, id);
+        dataSourceProvider.invalidateCache(id);
     }
 
     public Map<String, Object> testDatabaseConnection(String id) {

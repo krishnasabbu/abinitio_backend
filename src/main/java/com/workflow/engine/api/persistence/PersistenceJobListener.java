@@ -29,9 +29,19 @@ public class PersistenceJobListener implements JobExecutionListener {
     public void afterJob(JobExecution jobExecution) {
         try {
             long endTime = System.currentTimeMillis();
-            String status = mapBatchStatusToExecutionStatus(jobExecution.getStatus().toString());
-            String errorMessage = null;
 
+            // Check if cancel was requested
+            String currentStatusSql = "SELECT status FROM workflow_executions WHERE execution_id = ?";
+            String currentStatus = jdbcTemplate.queryForObject(currentStatusSql, String.class, executionId);
+
+            String finalStatus;
+            if ("cancel_requested".equals(currentStatus)) {
+                finalStatus = "cancelled";
+            } else {
+                finalStatus = mapBatchStatusToExecutionStatus(jobExecution.getStatus().toString());
+            }
+
+            String errorMessage = null;
             if (jobExecution.getFailureExceptions() != null && !jobExecution.getFailureExceptions().isEmpty()) {
                 Exception ex = jobExecution.getFailureExceptions().get(0);
                 errorMessage = ex.getMessage();
@@ -42,14 +52,14 @@ public class PersistenceJobListener implements JobExecutionListener {
                     "WHERE execution_id = ?";
 
             if (errorMessage != null) {
-                jdbcTemplate.update(updateSql, status, endTime, errorMessage, executionId);
+                jdbcTemplate.update(updateSql, finalStatus, endTime, errorMessage, executionId);
             } else {
-                jdbcTemplate.update(updateSql, status, endTime, executionId);
+                jdbcTemplate.update(updateSql, finalStatus, endTime, executionId);
             }
 
             calculateAndUpdateTotals(jobExecution);
 
-            logger.info("Job completed for execution: {}, status: {}", executionId, status);
+            logger.info("Job completed for execution: {}, status: {}", executionId, finalStatus);
         } catch (Exception e) {
             logger.error("Error updating job execution record for {}", executionId, e);
         }
