@@ -9,15 +9,35 @@ import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Executor for computing derived fields using SpEL expressions.
+ *
+ * Evaluates SpEL expressions for each item to compute new field values or transform
+ * existing fields. Expressions have access to all fields in the current item.
+ *
+ * Configuration:
+ * - expressions: (required) Multi-line string of fieldName: expression pairs
+ *                Each line contains one expression in format "fieldName: spel_expression"
+ *                Example: "total: price * quantity\nfull_name: firstName + ' ' + lastName"
+ *
+ * Output:
+ * Sets "outputItems" variable with items enhanced with computed fields.
+ *
+ * @author Workflow Engine
+ * @version 1.0
+ */
 @Component
 public class ComputeExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
+    private static final Logger logger = LoggerFactory.getLogger(ComputeExecutor.class);
     private static final ExpressionParser parser = new SpelExpressionParser();
 
     @Override
@@ -27,8 +47,10 @@ public class ComputeExecutor implements NodeExecutor<Map<String, Object>, Map<St
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        logger.debug("nodeId={}, Creating compute reader", context.getNodeDefinition().getId());
         List<Map<String, Object>> items = (List<Map<String, Object>>) context.getVariable("inputItems");
         if (items == null) {
+            logger.debug("nodeId={}, No input items", context.getNodeDefinition().getId());
             items = new ArrayList<>();
         }
         return new ListItemReader<>(items);
@@ -36,10 +58,12 @@ public class ComputeExecutor implements NodeExecutor<Map<String, Object>, Map<St
 
     @Override
     public ItemProcessor<Map<String, Object>, Map<String, Object>> createProcessor(NodeExecutionContext context) {
+        logger.debug("nodeId={}, Creating compute processor", context.getNodeDefinition().getId());
         JsonNode config = context.getNodeDefinition().getConfig();
         String expressionsStr = config.get("expressions").asText();
 
         Map<String, String> expressions = parseKeyValue(expressionsStr);
+        logger.debug("nodeId={}, Parsed {} computed field expressions", context.getNodeDefinition().getId(), expressions.size());
 
         return item -> {
             Map<String, Object> result = new LinkedHashMap<>(item);
@@ -49,10 +73,12 @@ public class ComputeExecutor implements NodeExecutor<Map<String, Object>, Map<St
                 String expression = expr.getValue();
 
                 try {
+                    logger.debug("nodeId={}, Evaluating expression for field: {}", context.getNodeDefinition().getId(), fieldName);
                     StandardEvaluationContext evalContext = new StandardEvaluationContext(result);
                     Object value = parser.parseExpression(expression).getValue(evalContext);
                     result.put(fieldName, value);
                 } catch (Exception e) {
+                    logger.error("nodeId={}, Failed to evaluate expression for field '{}': {}", context.getNodeDefinition().getId(), fieldName, e.getMessage(), e);
                     throw new IllegalArgumentException("Failed to evaluate expression for field '" + fieldName + "': " + e.getMessage(), e);
                 }
             }
@@ -63,6 +89,7 @@ public class ComputeExecutor implements NodeExecutor<Map<String, Object>, Map<St
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
+        logger.debug("nodeId={}, Creating compute writer", context.getNodeDefinition().getId());
         return items -> {
             List<Map<String, Object>> outputList = new ArrayList<>();
             for (Map<String, Object> item : items) {
@@ -70,24 +97,35 @@ public class ComputeExecutor implements NodeExecutor<Map<String, Object>, Map<St
                     outputList.add(item);
                 }
             }
+            logger.info("nodeId={}, Compute output: {} items processed with computed fields", context.getNodeDefinition().getId(), outputList.size());
             context.setVariable("outputItems", outputList);
         };
     }
 
     @Override
     public void validate(NodeExecutionContext context) {
+        logger.debug("nodeId={}, Validating Compute configuration", context.getNodeDefinition().getId());
         JsonNode config = context.getNodeDefinition().getConfig();
 
         if (config == null || !config.has("expressions")) {
+            logger.error("nodeId={}, Configuration invalid - missing 'expressions' property", context.getNodeDefinition().getId());
             throw new IllegalArgumentException("Compute node requires 'expressions' in config");
         }
 
         String expressionsStr = config.get("expressions").asText();
         if (expressionsStr == null || expressionsStr.trim().isEmpty()) {
+            logger.error("nodeId={}, Configuration invalid - 'expressions' cannot be empty", context.getNodeDefinition().getId());
             throw new IllegalArgumentException("Compute 'expressions' cannot be empty");
         }
+        logger.debug("nodeId={}, Compute configuration valid", context.getNodeDefinition().getId());
     }
 
+    /**
+     * Parses key-value pairs from newline-separated string.
+     *
+     * @param keyValueStr string containing key: value pairs separated by newlines
+     * @return map of parsed key-value pairs
+     */
     private Map<String, String> parseKeyValue(String keyValueStr) {
         Map<String, String> result = new LinkedHashMap<>();
         if (keyValueStr == null || keyValueStr.trim().isEmpty()) {

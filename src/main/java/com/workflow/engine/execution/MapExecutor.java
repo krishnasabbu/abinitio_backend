@@ -6,14 +6,35 @@ import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Executor for field-level mapping and renaming operations.
+ *
+ * Transforms input items by renaming, selecting, and reordering fields according
+ * to a field mapping configuration. Creates new items with the mapped field names.
+ *
+ * Configuration:
+ * - mappings: (required) Multi-line string of sourceField:targetField pairs
+ *             Each line contains one mapping in format "sourceField: targetField"
+ *             Example: "firstName: first_name\nlastName: last_name"
+ *
+ * Output:
+ * Sets "outputItems" variable with the mapped items.
+ *
+ * @author Workflow Engine
+ * @version 1.0
+ */
 @Component
 public class MapExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
+
+    private static final Logger logger = LoggerFactory.getLogger(MapExecutor.class);
 
     @Override
     public String getNodeType() {
@@ -22,8 +43,10 @@ public class MapExecutor implements NodeExecutor<Map<String, Object>, Map<String
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        logger.debug("nodeId={}, Creating map reader", context.getNodeDefinition().getId());
         List<Map<String, Object>> items = (List<Map<String, Object>>) context.getVariable("inputItems");
         if (items == null) {
+            logger.debug("nodeId={}, No input items found, using empty list", context.getNodeDefinition().getId());
             items = new ArrayList<>();
         }
         return new ListItemReader<>(items);
@@ -31,10 +54,12 @@ public class MapExecutor implements NodeExecutor<Map<String, Object>, Map<String
 
     @Override
     public ItemProcessor<Map<String, Object>, Map<String, Object>> createProcessor(NodeExecutionContext context) {
+        logger.debug("nodeId={}, Creating map processor", context.getNodeDefinition().getId());
         JsonNode config = context.getNodeDefinition().getConfig();
         String mappingsStr = config.get("mappings").asText();
 
         Map<String, String> mappings = parseKeyValue(mappingsStr);
+        logger.debug("nodeId={}, Parsed {} field mappings", context.getNodeDefinition().getId(), mappings.size());
 
         return item -> {
             Map<String, Object> result = new LinkedHashMap<>();
@@ -53,6 +78,7 @@ public class MapExecutor implements NodeExecutor<Map<String, Object>, Map<String
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
+        logger.debug("nodeId={}, Creating map writer", context.getNodeDefinition().getId());
         return items -> {
             List<Map<String, Object>> outputList = new ArrayList<>();
             for (Map<String, Object> item : items) {
@@ -60,24 +86,35 @@ public class MapExecutor implements NodeExecutor<Map<String, Object>, Map<String
                     outputList.add(item);
                 }
             }
+            logger.info("nodeId={}, Map output: {} items processed", context.getNodeDefinition().getId(), outputList.size());
             context.setVariable("outputItems", outputList);
         };
     }
 
     @Override
     public void validate(NodeExecutionContext context) {
+        logger.debug("nodeId={}, Validating Map configuration", context.getNodeDefinition().getId());
         JsonNode config = context.getNodeDefinition().getConfig();
 
         if (config == null || !config.has("mappings")) {
+            logger.error("nodeId={}, Configuration invalid - missing 'mappings' property", context.getNodeDefinition().getId());
             throw new IllegalArgumentException("Map node requires 'mappings' in config");
         }
 
         String mappingsStr = config.get("mappings").asText();
         if (mappingsStr == null || mappingsStr.trim().isEmpty()) {
+            logger.error("nodeId={}, Configuration invalid - 'mappings' cannot be empty", context.getNodeDefinition().getId());
             throw new IllegalArgumentException("Map 'mappings' cannot be empty");
         }
+        logger.debug("nodeId={}, Map configuration valid", context.getNodeDefinition().getId());
     }
 
+    /**
+     * Parses key-value pairs from newline-separated string.
+     *
+     * @param keyValueStr string containing key:value pairs separated by newlines
+     * @return map of parsed key-value pairs
+     */
     private Map<String, String> parseKeyValue(String keyValueStr) {
         Map<String, String> result = new LinkedHashMap<>();
         if (keyValueStr == null || keyValueStr.trim().isEmpty()) {

@@ -11,6 +11,26 @@ import org.springframework.batch.core.launch.support.TaskExecutorJobLauncher;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.stereotype.Service;
 
+/**
+ * Core service for executing workflow definitions.
+ *
+ * Orchestrates the complete workflow execution lifecycle including validation,
+ * execution planning, job launching, and result monitoring. Integrates with
+ * Spring Batch for distributed job execution.
+ *
+ * Process:
+ * 1. Validates workflow definition (DAG structure, executors available)
+ * 2. Plans execution (builds job and steps from workflow)
+ * 3. Launches job with async execution
+ * 4. Monitors job status and logs step execution details
+ *
+ * Thread safety: Thread-safe. Service is stateless and safe for concurrent access.
+ *
+ * @author Workflow Engine
+ * @version 1.0
+ * @see GraphValidator
+ * @see ExecutionPlanner
+ */
 @Service
 public class WorkflowExecutionService {
 
@@ -21,6 +41,16 @@ public class WorkflowExecutionService {
     private final JobRepository jobRepository;
     private final JobLauncher jobLauncher;
 
+    /**
+     * Constructs the WorkflowExecutionService with required dependencies.
+     *
+     * Initializes the Spring Batch JobLauncher for async execution.
+     *
+     * @param executionPlanner the planner for converting workflows to jobs
+     * @param graphValidator the validator for workflow structure
+     * @param jobRepository the Spring Batch job repository
+     * @throws Exception if JobLauncher initialization fails
+     */
     public WorkflowExecutionService(ExecutionPlanner executionPlanner,
                                    GraphValidator graphValidator,
                                    JobRepository jobRepository) throws Exception {
@@ -28,74 +58,101 @@ public class WorkflowExecutionService {
         this.graphValidator = graphValidator;
         this.jobRepository = jobRepository;
         this.jobLauncher = createJobLauncher();
+        log.debug("WorkflowExecutionService initialized");
     }
 
+    /**
+     * Creates and configures the Spring Batch JobLauncher.
+     *
+     * @return configured JobLauncher for async execution
+     * @throws Exception if launcher configuration fails
+     */
     private JobLauncher createJobLauncher() throws Exception {
+        log.debug("Creating TaskExecutorJobLauncher");
         TaskExecutorJobLauncher launcher = new TaskExecutorJobLauncher();
         launcher.setJobRepository(jobRepository);
         launcher.afterPropertiesSet();
+        log.debug("TaskExecutorJobLauncher created successfully");
         return launcher;
     }
 
+    /**
+     * Executes a workflow definition end-to-end.
+     *
+     * Performs the following steps:
+     * 1. Validates the workflow definition
+     * 2. Plans job execution from the workflow
+     * 3. Launches the job asynchronously
+     * 4. Waits for completion and logs results
+     *
+     * @param workflow the workflow definition to execute
+     * @throws IllegalArgumentException if workflow validation fails
+     * @throws RuntimeException if job execution fails
+     * @throws Exception if job launching fails
+     */
     public void executeWorkflow(WorkflowDefinition workflow) throws Exception {
-        log.info("Starting workflow validation: {}", workflow.getId());
+        log.info("workflowId={}, Executing workflow", workflow.getId());
+        log.debug("workflowId={}, Starting workflow validation", workflow.getId());
 
         GraphValidator.ValidationResult validationResult = graphValidator.validate(workflow);
 
         if (!validationResult.isValid()) {
-            log.error("Workflow validation failed: {}", validationResult);
+            log.error("workflowId={}, Workflow validation failed: {}", workflow.getId(), validationResult);
             throw new IllegalArgumentException("Workflow validation failed: " + validationResult.toString());
         }
 
-        log.info("Workflow validation passed. Building execution plan...");
+        log.debug("workflowId={}, Validation passed, building execution plan", workflow.getId());
 
         Job job = executionPlanner.planExecution(workflow);
 
-        log.info("Job built successfully: {}", job.getName());
+        log.debug("workflowId={}, Job built successfully: {}", workflow.getId(), job.getName());
 
         JobParameters jobParameters = new JobParametersBuilder()
             .addLong("timestamp", System.currentTimeMillis())
             .addString("workflowId", workflow.getId())
             .toJobParameters();
 
-        log.info("Launching job execution...");
+        log.info("workflowId={}, Launching job execution: {}", workflow.getId(), job.getName());
         JobExecution execution = jobLauncher.run(job, jobParameters);
 
-        log.info("Job execution completed with status: {}", execution.getStatus());
-        log.info("Exit status: {}", execution.getExitStatus().getExitCode());
+        log.info("workflowId={}, Job execution completed with status: {}", workflow.getId(), execution.getStatus());
+        log.debug("workflowId={}, Exit status: {}", workflow.getId(), execution.getExitStatus().getExitCode());
 
         if (execution.getStatus() == BatchStatus.COMPLETED) {
-            log.info("Workflow executed successfully!");
-            logStepExecutions(execution);
+            log.info("workflowId={}, Workflow executed successfully!", workflow.getId());
+            logStepExecutions(execution, workflow.getId());
         } else if (execution.getStatus() == BatchStatus.FAILED) {
-            log.error("Workflow execution failed!");
-            logStepExecutions(execution);
+            log.error("workflowId={}, Workflow execution failed!", workflow.getId());
+            logStepExecutions(execution, workflow.getId());
             throw new RuntimeException("Workflow execution failed");
         }
     }
 
-    private void logStepExecutions(JobExecution jobExecution) {
-        log.info("\n" + "=".repeat(80));
-        log.info("STEP EXECUTION SUMMARY");
-        log.info("=".repeat(80));
-
+    /**
+     * Logs detailed execution results for all steps in the job.
+     *
+     * Outputs step-by-step execution metrics including read/write counts,
+     * skip counts, duration, and any failure exceptions.
+     *
+     * @param jobExecution the completed job execution
+     * @param workflowId the workflow ID for logging context
+     */
+    private void logStepExecutions(JobExecution jobExecution, String workflowId) {
         for (StepExecution stepExecution : jobExecution.getStepExecutions()) {
-            log.info("\nStep: {}", stepExecution.getStepName());
-            log.info("  Status: {}", stepExecution.getStatus());
-            log.info("  Read Count: {}", stepExecution.getReadCount());
-            log.info("  Write Count: {}", stepExecution.getWriteCount());
-            log.info("  Skip Count: {}", stepExecution.getSkipCount());
-            log.info("  Commit Count: {}", stepExecution.getCommitCount());
-            log.info("  Rollback Count: {}", stepExecution.getRollbackCount());
+            log.info("workflowId={}, Step: {} Status: {}", workflowId, stepExecution.getStepName(), stepExecution.getStatus());
+            log.debug("workflowId={}, Step: {} Read: {} Write: {} Skip: {} Commit: {} Rollback: {}",
+                workflowId, stepExecution.getStepName(),
+                stepExecution.getReadCount(), stepExecution.getWriteCount(),
+                stepExecution.getSkipCount(), stepExecution.getCommitCount(),
+                stepExecution.getRollbackCount());
+
             if (stepExecution.getStartTime() != null && stepExecution.getEndTime() != null) {
                 long duration = stepExecution.getEndTime().getTime() - stepExecution.getStartTime().getTime();
-                log.info("  Duration: {}ms", duration);
+                log.debug("workflowId={}, Step: {} Duration: {}ms", workflowId, stepExecution.getStepName(), duration);
             }
             if (stepExecution.getFailureExceptions() != null && !stepExecution.getFailureExceptions().isEmpty()) {
-                log.error("  Failures: {}", stepExecution.getFailureExceptions());
+                log.error("workflowId={}, Step: {} Failures: {}", workflowId, stepExecution.getStepName(), stepExecution.getFailureExceptions());
             }
         }
-
-        log.info("\n" + "=".repeat(80));
     }
 }

@@ -11,6 +11,8 @@ import org.springframework.batch.item.file.transform.FixedLengthTokenizer;
 import org.springframework.batch.item.file.transform.Range;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -19,8 +21,30 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Executor for reading data from local filesystem files.
+ *
+ * Reads records from CSV, TXT, or other delimited/fixed-width text files.
+ * Supports multiple formats including:
+ * - CSV files with configurable delimiter and headers
+ * - Fixed-width text files with column ranges
+ * - Delimited text files with custom delimiters
+ *
+ * Configuration:
+ * - filePath: (required) Path to the input file
+ * - fileType: (optional) File type - "csv" or "txt" (default: "csv")
+ * - encoding: (optional) Character encoding (default: "UTF-8")
+ * - delimiter: (optional for CSV) Field delimiter (default: ",")
+ * - header: (optional for CSV) Whether first line is header (default: true)
+ * - schema: (optional) Schema definition for type conversion
+ *
+ * @author Workflow Engine
+ * @version 1.0
+ */
 @Component
 public class FileSourceExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
+
+    private static final Logger logger = LoggerFactory.getLogger(FileSourceExecutor.class);
 
     @Override
     public String getNodeType() {
@@ -29,21 +53,27 @@ public class FileSourceExecutor implements NodeExecutor<Map<String, Object>, Map
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        logger.debug("nodeId={}, Creating file source reader", context.getNodeDefinition().getId());
         JsonNode config = context.getNodeDefinition().getConfig();
 
         String filePath = config.get("filePath").asText();
         String fileType = config.has("fileType") ? config.get("fileType").asText().toLowerCase() : "csv";
         String encoding = config.has("encoding") ? config.get("encoding").asText() : "UTF-8";
 
+        logger.debug("nodeId={}, Reading from file: {} (type: {}, encoding: {})",
+            context.getNodeDefinition().getId(), filePath, fileType, encoding);
+
         if ("csv".equals(fileType)) {
             return createCsvReader(config, filePath, encoding);
         } else if ("txt".equals(fileType)) {
             return createTxtReader(config, filePath, encoding);
         } else if ("json".equals(fileType) || "excel".equals(fileType) || "parquet".equals(fileType)) {
+            logger.error("nodeId={}, File type not implemented: {}", context.getNodeDefinition().getId(), fileType);
             throw new UnsupportedOperationException(
                 "File type '" + fileType + "' is not implemented yet."
             );
         } else {
+            logger.error("nodeId={}, File type not supported: {}", context.getNodeDefinition().getId(), fileType);
             throw new UnsupportedOperationException(
                 "File type '" + fileType + "' is not supported."
             );

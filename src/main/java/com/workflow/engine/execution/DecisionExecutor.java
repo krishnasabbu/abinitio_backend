@@ -9,15 +9,27 @@ import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Executor for conditional decision nodes.
+ *
+ * Evaluates a condition expression and adds a decision field to each item.
+ * Used to create conditional branching paths in workflows.
+ *
+ * @author Workflow Engine
+ * @version 1.0
+ */
 @Component
 public class DecisionExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
+    private static final Logger logger = LoggerFactory.getLogger(DecisionExecutor.class);
     private static final ExpressionParser parser = new SpelExpressionParser();
 
     @Override
