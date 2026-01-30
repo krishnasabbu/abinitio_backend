@@ -1,5 +1,6 @@
 package com.workflow.engine.execution.job;
 
+import com.workflow.engine.api.persistence.PersistenceStepListener;
 import com.workflow.engine.execution.NodeExecutionContext;
 import com.workflow.engine.execution.NodeExecutor;
 import com.workflow.engine.execution.NodeExecutorRegistry;
@@ -18,6 +19,7 @@ import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -30,6 +32,8 @@ public class StepFactory {
     private final JobRepository jobRepository;
     private final PlatformTransactionManager transactionManager;
     private final MetricsCollector metricsCollector;
+    private JdbcTemplate jdbcTemplate;
+    private String executionId;
 
     public StepFactory(NodeExecutorRegistry executorRegistry,
                       JobRepository jobRepository,
@@ -39,6 +43,11 @@ public class StepFactory {
         this.jobRepository = jobRepository;
         this.transactionManager = transactionManager;
         this.metricsCollector = metricsCollector;
+    }
+
+    public void setApiListenerContext(JdbcTemplate jdbcTemplate, String executionId) {
+        this.jdbcTemplate = jdbcTemplate;
+        this.executionId = executionId;
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -85,6 +94,15 @@ public class StepFactory {
                 metricsCollector
             );
             chunkBuilder.listener(listener);
+        }
+
+        if (jdbcTemplate != null && executionId != null) {
+            PersistenceStepListener persistenceListener = new PersistenceStepListener(
+                jdbcTemplate,
+                stepNode,
+                executionId
+            );
+            chunkBuilder.listener(persistenceListener);
         }
 
         if (stepNode.exceptionHandling() != null) {

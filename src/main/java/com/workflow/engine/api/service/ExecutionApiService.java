@@ -3,48 +3,142 @@ package com.workflow.engine.api.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.workflow.engine.api.dto.WorkflowExecutionDto;
 import com.workflow.engine.api.dto.NodeExecutionDto;
+import com.workflow.engine.api.persistence.ExecutionLogWriter;
+import com.workflow.engine.api.persistence.PersistenceJobListener;
+import com.workflow.engine.api.persistence.PersistenceStepListener;
+import com.workflow.engine.execution.job.DynamicJobBuilder;
+import com.workflow.engine.execution.job.StepFactory;
+import com.workflow.engine.graph.ExecutionGraphBuilder;
+import com.workflow.engine.graph.ExecutionPlan;
+import com.workflow.engine.graph.StepNode;
+import com.workflow.engine.model.WorkflowDefinition;
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.JobParameters;
+import org.springframework.batch.core.JobParametersBuilder;
+import org.springframework.batch.core.launch.JobLauncher;
+import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.*;
 
 @Service
 public class ExecutionApiService {
+
+    private static final Logger logger = LoggerFactory.getLogger(ExecutionApiService.class);
+
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private ExecutionGraphBuilder executionGraphBuilder;
+
+    @Autowired
+    private DynamicJobBuilder dynamicJobBuilder;
+
+    @Autowired
+    private JobLauncher jobLauncher;
+
+    @Autowired
+    private JobRepository jobRepository;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+
+    @Autowired
+    private StepFactory stepFactory;
 
     private ObjectMapper objectMapper = new ObjectMapper();
 
     public Map<String, Object> executeWorkflow(String executionMode, Map<String, Object> request) {
         String executionId = "exec_" + UUID.randomUUID().toString().substring(0, 8);
-        String workflowName = (String) ((Map<String, Object>) request.get("workflow")).get("name");
         long startTime = System.currentTimeMillis();
 
-        String sql = "INSERT INTO workflow_executions (id, execution_id, workflow_name, status, start_time, execution_mode) VALUES (?, ?, ?, ?, ?, ?)";
-        jdbcTemplate.update(sql, executionId, executionId, workflowName, "running", startTime, executionMode);
+        try {
+            // Parse workflow definition from request
+            @SuppressWarnings("unchecked")
+            Map<String, Object> workflowData = (Map<String, Object>) request.get("workflow");
+            if (workflowData == null) {
+                return buildErrorResponse("Workflow not found in request");
+            }
 
-        long endTime = System.currentTimeMillis();
-        long duration = endTime - startTime;
+            String workflowName = (String) workflowData.get("name");
+            if (workflowName == null || workflowName.isEmpty()) {
+                workflowName = "Unnamed Workflow";
+            }
 
-        String updateSql = "UPDATE workflow_executions SET status = ?, end_time = ?, total_execution_time_ms = ?, total_nodes = ?, completed_nodes = ?, successful_nodes = ?, failed_nodes = 0 WHERE execution_id = ?";
-        jdbcTemplate.update(updateSql, "success", endTime, duration, 1, 1, executionId);
+            // Store workflow payload for potential rerun
+            String workflowPayload = objectMapper.writeValueAsString(workflowData);
 
-        Map<String, Object> nodeResult = new HashMap<>();
-        nodeResult.put("node_id", "node_1");
-        nodeResult.put("status", "success");
-        nodeResult.put("data", null);
-        nodeResult.put("execution_time_ms", duration);
-        nodeResult.put("records_processed", 0);
+            // Convert to WorkflowDefinition
+            WorkflowDefinition workflow = objectMapper.convertValue(workflowData, WorkflowDefinition.class);
 
+            // Create execution record in database
+            String insertSql = "INSERT INTO workflow_executions (id, execution_id, workflow_name, status, start_time, execution_mode, parameters) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)";
+            jdbcTemplate.update(insertSql, executionId, executionId, workflowName, "running", startTime, executionMode, workflowPayload);
+
+            // Build execution plan
+            ExecutionPlan plan = executionGraphBuilder.build(workflow);
+
+            // Build and launch job
+            launchWorkflowJob(plan, executionId, executionMode);
+
+            // Return immediate response with "running" status
+            return Map.of(
+                    "execution_id", executionId,
+                    "status", "running",
+                    "message", "Workflow execution started",
+                    "total_nodes", plan.steps().size()
+            );
+
+        } catch (Exception e) {
+            logger.error("Error executing workflow {}", executionId, e);
+            // Update execution with error status
+            try {
+                String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
+                String updateSql = "UPDATE workflow_executions SET status = ?, error_message = ?, end_time = ? WHERE execution_id = ?";
+                jdbcTemplate.update(updateSql, "failed", errorMsg, System.currentTimeMillis(), executionId);
+            } catch (Exception ex) {
+                logger.error("Error updating execution status", ex);
+            }
+            return buildErrorResponse("Failed to execute workflow: " + e.getMessage());
+        }
+    }
+
+    private void launchWorkflowJob(ExecutionPlan plan, String executionId, String executionMode) throws Exception {
+        // Set API listener context in StepFactory
+        stepFactory.setApiListenerContext(jdbcTemplate, executionId);
+
+        // Create job
+        Job job = dynamicJobBuilder.buildJob(plan);
+
+        // Add job execution listener
+        if (job instanceof org.springframework.batch.core.job.SimpleJob simpleJob) {
+            simpleJob.registerJobExecutionListener(new PersistenceJobListener(jdbcTemplate, executionId));
+        }
+
+        // Create job parameters
+        JobParameters params = new JobParametersBuilder()
+                .addString("executionId", executionId)
+                .addString("executionMode", executionMode)
+                .addLong("timestamp", System.currentTimeMillis())
+                .toJobParameters();
+
+        // Launch job asynchronously
+        jobLauncher.run(job, params);
+    }
+
+    private Map<String, Object> buildErrorResponse(String message) {
         Map<String, Object> response = new HashMap<>();
-        response.put("status", "success");
-        response.put("results", List.of(nodeResult));
-        response.put("total_execution_time_ms", duration);
-        response.put("total_records", 0);
-        response.put("failed_nodes", 0);
-
+        response.put("status", "error");
+        response.put("message", message);
         return response;
     }
 
@@ -140,18 +234,72 @@ public class ExecutionApiService {
         String newExecutionId = "exec_" + UUID.randomUUID().toString().substring(0, 8);
         WorkflowExecutionDto original = getExecutionById(executionId);
 
-        if (original != null) {
-            String sql = "INSERT INTO workflow_executions (id, execution_id, workflow_name, status, start_time, execution_mode) VALUES (?, ?, ?, ?, ?, ?)";
-            jdbcTemplate.update(sql, newExecutionId, newExecutionId, original.getWorkflowName(), "pending", System.currentTimeMillis(), "parallel");
+        if (original == null) {
+            return buildErrorResponse("Original execution not found");
         }
 
-        return Map.of("new_execution_id", newExecutionId, "status", "pending");
+        try {
+            // Get workflow payload from original execution
+            String payloadSql = "SELECT parameters FROM workflow_executions WHERE execution_id = ?";
+            String workflowPayload = jdbcTemplate.queryForObject(payloadSql, String.class, executionId);
+
+            if (workflowPayload == null || workflowPayload.isEmpty()) {
+                return buildErrorResponse("Workflow payload not found");
+            }
+
+            // Create new execution record
+            String insertSql = "INSERT INTO workflow_executions (id, execution_id, workflow_name, status, start_time, execution_mode, parameters) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)";
+            String executionMode = "parallel";
+            jdbcTemplate.update(insertSql, newExecutionId, newExecutionId, original.getWorkflowName(), "running",
+                    System.currentTimeMillis(), executionMode, workflowPayload);
+
+            // Parse and execute workflow
+            @SuppressWarnings("unchecked")
+            Map<String, Object> workflowData = objectMapper.readValue(workflowPayload, Map.class);
+            WorkflowDefinition workflow = objectMapper.convertValue(workflowData, WorkflowDefinition.class);
+
+            if (fromNodeId != null && !fromNodeId.isEmpty()) {
+                // Partial rerun from node - not yet implemented
+                logger.info("Partial rerun from node {} not yet supported, running full workflow", fromNodeId);
+            }
+
+            ExecutionPlan plan = executionGraphBuilder.build(workflow);
+            launchWorkflowJob(plan, newExecutionId, executionMode);
+
+            return Map.of(
+                    "new_execution_id", newExecutionId,
+                    "status", "running",
+                    "message", fromNodeId != null ? "Full rerun started (partial rerun not yet supported)" : "Execution rerun started"
+            );
+
+        } catch (Exception e) {
+            logger.error("Error rerunning execution {}", executionId, e);
+            return buildErrorResponse("Failed to rerun execution: " + e.getMessage());
+        }
     }
 
     public Map<String, Object> cancelExecution(String executionId) {
-        String sql = "UPDATE workflow_executions SET status = ? WHERE execution_id = ?";
-        jdbcTemplate.update(sql, "cancelled", executionId);
-        return Map.of("status", "cancelled", "message", "Execution cancelled successfully");
+        try {
+            String sql = "UPDATE workflow_executions SET status = ?, end_time = ? WHERE execution_id = ? AND status = 'running'";
+            int updated = jdbcTemplate.update(sql, "cancelled", System.currentTimeMillis(), executionId);
+
+            if (updated > 0) {
+                // Log the cancellation
+                String insertLogSql = "INSERT INTO execution_logs (timestamp, datetime, level, execution_id, message) " +
+                        "VALUES (?, ?, ?, ?, ?)";
+                long timestamp = System.currentTimeMillis();
+                String datetime = new java.time.Instant.ofEpochMilli(timestamp).toString();
+                jdbcTemplate.update(insertLogSql, timestamp, datetime, "INFO", executionId, "Execution cancelled by user");
+
+                return Map.of("status", "cancelled", "message", "Execution cancelled successfully");
+            } else {
+                return buildErrorResponse("Execution not found or not in running state");
+            }
+        } catch (Exception e) {
+            logger.error("Error cancelling execution {}", executionId, e);
+            return buildErrorResponse("Failed to cancel execution: " + e.getMessage());
+        }
     }
 
     public Map<String, Object> getRecentExecutions(int limit) {
