@@ -80,6 +80,18 @@ public class NodeExecutorRegistry {
     }
 
     /**
+     * Normalizes a node type string by trimming whitespace.
+     *
+     * Handles null inputs safely by returning empty string.
+     *
+     * @param nodeType the node type to normalize
+     * @return trimmed node type, or empty string if input is null
+     */
+    private String normalize(String nodeType) {
+        return nodeType == null ? "" : nodeType.trim();
+    }
+
+    /**
      * Logs a summary of all registered executors at startup.
      *
      * Displays the complete list of registered node types and their executor classes.
@@ -137,19 +149,29 @@ public class NodeExecutorRegistry {
      *
      * @param nodeType the node type identifier to lookup
      * @return the executor instance for the given node type
-     * @throws IllegalArgumentException if no executor is registered for the node type
+     * @throws IllegalArgumentException if nodeType is null/blank or no executor is registered
      */
     public NodeExecutor<?, ?> getExecutor(String nodeType) {
-        logger.debug("Looking up executor for node type: {}", nodeType);
-        NodeExecutor<?, ?> executor = executors.get(nodeType);
+        String normalized = normalize(nodeType);
+
+        if (normalized.isEmpty()) {
+            List<String> available = executors.keySet().stream().sorted().collect(Collectors.toList());
+            logger.error("Node type cannot be null or blank. Available types: {}", available);
+            throw new IllegalArgumentException(
+                "Node type cannot be null or blank. Available types: " + available
+            );
+        }
+
+        logger.debug("Looking up executor for node type: {}", normalized);
+        NodeExecutor<?, ?> executor = executors.get(normalized);
         if (executor == null) {
             List<String> available = executors.keySet().stream().sorted().collect(Collectors.toList());
             logger.error(
                 "No executor registered for nodeType='{}'. Available types: {}",
-                nodeType, available
+                normalized, available
             );
             throw new IllegalArgumentException(
-                "No executor registered for nodeType='" + nodeType + "'. Available: " + available
+                "No executor registered for nodeType='" + normalized + "'. Available: " + available
             );
         }
         return executor;
@@ -162,9 +184,10 @@ public class NodeExecutorRegistry {
      * @return true if an executor is registered for this node type, false otherwise
      */
     public boolean hasExecutor(String nodeType) {
-        boolean exists = executors.containsKey(nodeType);
+        String normalized = normalize(nodeType);
+        boolean exists = executors.containsKey(normalized);
         if (!exists) {
-            logger.debug("No executor found for node type: {}", nodeType);
+            logger.debug("No executor found for node type: {}", normalized);
         }
         return exists;
     }
@@ -175,10 +198,11 @@ public class NodeExecutorRegistry {
      * @param nodeType the node type identifier whose executor should be removed
      */
     public void unregister(String nodeType) {
-        if (executors.remove(nodeType) != null) {
-            logger.debug("Unregistered executor for node type: {}", nodeType);
+        String normalized = normalize(nodeType);
+        if (executors.remove(normalized) != null) {
+            logger.debug("Unregistered executor for node type: {}", normalized);
         } else {
-            logger.warn("Attempted to unregister non-existent executor for node type: {}", nodeType);
+            logger.warn("Attempted to unregister non-existent executor for node type: {}", normalized);
         }
     }
 
