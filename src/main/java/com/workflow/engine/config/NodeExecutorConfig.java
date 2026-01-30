@@ -7,6 +7,7 @@ import com.workflow.engine.execution.CountExecutor;
 import com.workflow.engine.execution.DBSinkExecutor;
 import com.workflow.engine.execution.DBSourceExecutor;
 import com.workflow.engine.execution.DecisionExecutor;
+import com.workflow.engine.execution.DeduplicateExecutor;
 import com.workflow.engine.execution.DenormalizeExecutor;
 import com.workflow.engine.execution.EndExecutor;
 import com.workflow.engine.execution.ErrorSinkExecutor;
@@ -14,8 +15,13 @@ import com.workflow.engine.execution.FailJobExecutor;
 import com.workflow.engine.execution.FileSinkExecutor;
 import com.workflow.engine.execution.FileSourceExecutor;
 import com.workflow.engine.execution.FilterExecutor;
+import com.workflow.engine.execution.IntersectExecutor;
+import com.workflow.engine.execution.JoinExecutor;
 import com.workflow.engine.execution.LimitExecutor;
+import com.workflow.engine.execution.LookupExecutor;
 import com.workflow.engine.execution.MapExecutor;
+import com.workflow.engine.execution.MergeExecutor;
+import com.workflow.engine.execution.MinusExecutor;
 import com.workflow.engine.execution.NodeExecutorRegistry;
 import com.workflow.engine.execution.NormalizeExecutor;
 import com.workflow.engine.execution.ReformatExecutor;
@@ -60,7 +66,13 @@ public class NodeExecutorConfig {
         SwitchExecutor switchExecutor,
         SortExecutor sortExecutor,
         AggregateExecutor aggregateExecutor,
-        SchemaValidatorExecutor schemaValidatorExecutor
+        SchemaValidatorExecutor schemaValidatorExecutor,
+        JoinExecutor joinExecutor,
+        LookupExecutor lookupExecutor,
+        MergeExecutor mergeExecutor,
+        DeduplicateExecutor deduplicateExecutor,
+        IntersectExecutor intersectExecutor,
+        MinusExecutor minusExecutor
     ) {
         return args -> {
             registry.register(fileSourceExecutor);
@@ -88,6 +100,12 @@ public class NodeExecutorConfig {
             registry.register(sortExecutor);
             registry.register(aggregateExecutor);
             registry.register(schemaValidatorExecutor);
+            registry.register(joinExecutor);
+            registry.register(lookupExecutor);
+            registry.register(mergeExecutor);
+            registry.register(deduplicateExecutor);
+            registry.register(intersectExecutor);
+            registry.register(minusExecutor);
         };
     }
 }
