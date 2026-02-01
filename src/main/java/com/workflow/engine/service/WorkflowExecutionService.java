@@ -11,11 +11,13 @@ import org.springframework.batch.core.*;
 import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.launch.support.TaskExecutorJobLauncher;
 import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Core service for executing workflow definitions.
@@ -46,6 +48,7 @@ public class WorkflowExecutionService {
     private final GraphValidator graphValidator;
     private final JobRepository jobRepository;
     private final JobLauncher jobLauncher;
+    private final JdbcTemplate jdbcTemplate;
 
     /**
      * Constructs the WorkflowExecutionService with required dependencies.
@@ -55,14 +58,17 @@ public class WorkflowExecutionService {
      * @param executionPlanner the planner for converting workflows to jobs
      * @param graphValidator the validator for workflow structure
      * @param jobRepository the Spring Batch job repository
+     * @param jdbcTemplate the JDBC template for database operations
      * @throws Exception if JobLauncher initialization fails
      */
     public WorkflowExecutionService(ExecutionPlanner executionPlanner,
                                    GraphValidator graphValidator,
-                                   JobRepository jobRepository) throws Exception {
+                                   JobRepository jobRepository,
+                                   JdbcTemplate jdbcTemplate) throws Exception {
         this.executionPlanner = executionPlanner;
         this.graphValidator = graphValidator;
         this.jobRepository = jobRepository;
+        this.jdbcTemplate = jdbcTemplate;
         this.jobLauncher = createJobLauncher();
         log.debug("WorkflowExecutionService initialized");
     }
@@ -156,22 +162,28 @@ public class WorkflowExecutionService {
 
         log.debug("workflowId={}, Validation passed, building execution plan", workflow.getId());
 
-        Job job = executionPlanner.planExecution(workflow);
+        String executionId = UUID.randomUUID().toString();
+        long startTime = System.currentTimeMillis();
 
-        log.debug("workflowId={}, Job built successfully: {}", workflow.getId(), job.getName());
+        persistWorkflowExecutionRecord(executionId, workflow, startTime);
+
+        Job job = executionPlanner.planExecution(workflow, executionId);
+
+        log.debug("workflowId={}, Job built successfully: {}, executionId={}", workflow.getId(), job.getName(), executionId);
 
         JobParameters jobParameters = new JobParametersBuilder()
             .addLong("timestamp", System.currentTimeMillis())
             .addString("workflowId", workflow.getId())
+            .addString("executionId", executionId)
             .toJobParameters();
 
-        log.info("workflowId={}, Launching job execution: {}", workflow.getId(), job.getName());
+        log.info("workflowId={}, executionId={}, Launching job execution: {}", workflow.getId(), executionId, job.getName());
         JobExecution execution = jobLauncher.run(job, jobParameters);
 
-        log.info("workflowId={}, Job execution completed with status: {}", workflow.getId(), execution.getStatus());
+        log.info("workflowId={}, executionId={}, Job execution completed with status: {}", workflow.getId(), executionId, execution.getStatus());
         log.debug("workflowId={}, Exit status: {}", workflow.getId(), execution.getExitStatus().getExitCode());
 
-        WorkflowExecutionResponseDto response = buildExecutionResponse(execution, workflow);
+        WorkflowExecutionResponseDto response = buildExecutionResponse(execution, workflow, executionId);
 
         if (execution.getStatus() == BatchStatus.COMPLETED) {
             log.info("workflowId={}, Workflow executed successfully!", workflow.getId());
@@ -185,16 +197,37 @@ public class WorkflowExecutionService {
     }
 
     /**
+     * Persists initial workflow execution record to database.
+     *
+     * @param executionId the unique execution identifier
+     * @param workflow the workflow definition
+     * @param startTime the execution start time
+     */
+    private void persistWorkflowExecutionRecord(String executionId, WorkflowDefinition workflow, long startTime) {
+        try {
+            String id = UUID.randomUUID().toString();
+            String sql = "INSERT INTO workflow_executions (id, execution_id, workflow_name, workflow_id, status, start_time) " +
+                    "VALUES (?, ?, ?, ?, ?, ?)";
+
+            jdbcTemplate.update(sql, id, executionId, workflow.getName(), workflow.getId(), "running", startTime);
+            log.debug("Persisted workflow execution record: executionId={}", executionId);
+        } catch (Exception e) {
+            log.warn("Error persisting workflow execution record: {}", e.getMessage());
+        }
+    }
+
+    /**
      * Builds execution response DTO from job execution result.
      *
      * @param jobExecution the completed job execution
      * @param workflow the workflow definition
+     * @param executionId the execution identifier
      * @return WorkflowExecutionResponseDto with all execution details
      */
-    private WorkflowExecutionResponseDto buildExecutionResponse(JobExecution jobExecution, WorkflowDefinition workflow) {
+    private WorkflowExecutionResponseDto buildExecutionResponse(JobExecution jobExecution, WorkflowDefinition workflow, String executionId) {
         WorkflowExecutionResponseDto response = new WorkflowExecutionResponseDto();
 
-        response.setExecutionId(String.valueOf(jobExecution.getId()));
+        response.setExecutionId(executionId);
         response.setWorkflowId(workflow.getId());
         response.setWorkflowName(workflow.getName());
         response.setStatus(jobExecution.getStatus().toString());
