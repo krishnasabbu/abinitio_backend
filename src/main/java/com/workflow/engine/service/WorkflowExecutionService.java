@@ -207,11 +207,12 @@ public class WorkflowExecutionService {
     private void persistWorkflowExecutionRecord(String executionId, WorkflowDefinition workflow, long startTime) {
         try {
             String id = UUID.randomUUID().toString();
+            String workflowId = workflow.getId() != null ? workflow.getId() : "workflow_" + UUID.randomUUID().toString().substring(0, 8);
             String sql = "INSERT INTO workflow_executions (id, execution_id, workflow_name, workflow_id, status, start_time) " +
                     "VALUES (?, ?, ?, ?, ?, ?)";
 
-            jdbcTemplate.update(sql, id, executionId, workflow.getName(), workflow.getId(), "running", startTime);
-            log.debug("Persisted workflow execution record: executionId={}", executionId);
+            jdbcTemplate.update(sql, id, executionId, workflow.getName(), workflowId, "running", startTime);
+            log.debug("Persisted workflow execution record: executionId={}, workflowId={}", executionId, workflowId);
         } catch (Exception e) {
             log.warn("Error persisting workflow execution record: {}", e.getMessage());
         }

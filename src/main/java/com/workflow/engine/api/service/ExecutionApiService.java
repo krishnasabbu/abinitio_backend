@@ -87,10 +87,14 @@ public class ExecutionApiService {
             // Convert to WorkflowDefinition
             WorkflowDefinition workflow = objectMapper.convertValue(workflowData, WorkflowDefinition.class);
 
+            // Get workflow ID if available
+            String workflowId = workflow.getId() != null ? workflow.getId() : "workflow_" + UUID.randomUUID().toString().substring(0, 8);
+
             // Create execution record in database
-            String insertSql = "INSERT INTO workflow_executions (id, execution_id, workflow_name, status, start_time, execution_mode, parameters) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)";
-            jdbcTemplate.update(insertSql, executionId, executionId, workflowName, "running", startTime, executionMode, workflowPayload);
+            String recordId = UUID.randomUUID().toString();
+            String insertSql = "INSERT INTO workflow_executions (id, execution_id, workflow_id, workflow_name, status, start_time, execution_mode, parameters) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+            jdbcTemplate.update(insertSql, recordId, executionId, workflowId, workflowName, "running", startTime, executionMode, workflowPayload);
 
             // Build execution plan
             ExecutionPlan plan = executionGraphBuilder.build(workflow);
@@ -99,7 +103,7 @@ public class ExecutionApiService {
             logExecutionTraceSummary(executionId, workflowName, plan, executionMode);
 
             // Build and launch job
-            launchWorkflowJob(plan, executionId, executionMode);
+            launchWorkflowJob(plan, executionId, executionMode, workflowId);
 
             // Return immediate response with "running" status
             return Map.of(
@@ -123,10 +127,9 @@ public class ExecutionApiService {
         }
     }
 
-    private void launchWorkflowJob(ExecutionPlan plan, String executionId, String executionMode) throws Exception {
+    private void launchWorkflowJob(ExecutionPlan plan, String executionId, String executionMode, String workflowId) throws Exception {
         stepFactory.setApiListenerContext(jdbcTemplate, executionId);
 
-        String workflowId = plan.workflowId() != null ? plan.workflowId() : executionId;
         Job job = dynamicJobBuilder.buildJob(plan, workflowId);
 
         // Add job execution listener
@@ -281,6 +284,8 @@ public class ExecutionApiService {
             Map<String, Object> workflowData = objectMapper.readValue(workflowPayload, Map.class);
             WorkflowDefinition workflow = objectMapper.convertValue(workflowData, WorkflowDefinition.class);
 
+            String workflowId = workflow.getId() != null ? workflow.getId() : "workflow_" + UUID.randomUUID().toString().substring(0, 8);
+
             ExecutionPlan fullPlan = executionGraphBuilder.build(workflow);
             ExecutionPlan executionPlan;
             String message;
@@ -299,12 +304,13 @@ public class ExecutionApiService {
                 message = "Full rerun started";
             }
 
-            String insertSql = "INSERT INTO workflow_executions (id, execution_id, workflow_name, status, start_time, execution_mode, parameters) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)";
-            jdbcTemplate.update(insertSql, newExecutionId, newExecutionId, workflowName, "running",
+            String recordId = UUID.randomUUID().toString();
+            String insertSql = "INSERT INTO workflow_executions (id, execution_id, workflow_id, workflow_name, status, start_time, execution_mode, parameters) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+            jdbcTemplate.update(insertSql, recordId, newExecutionId, workflowId, workflowName, "running",
                     System.currentTimeMillis(), executionMode, workflowPayload);
 
-            launchWorkflowJob(executionPlan, newExecutionId, executionMode);
+            launchWorkflowJob(executionPlan, newExecutionId, executionMode, workflowId);
 
             return Map.of(
                     "new_execution_id", newExecutionId,
@@ -338,6 +344,8 @@ public class ExecutionApiService {
             Map<String, Object> workflowData = objectMapper.readValue(workflowPayload, Map.class);
             WorkflowDefinition workflow = objectMapper.convertValue(workflowData, WorkflowDefinition.class);
 
+            String workflowId = workflow.getId() != null ? workflow.getId() : "workflow_" + UUID.randomUUID().toString().substring(0, 8);
+
             ExecutionPlan fullPlan = executionGraphBuilder.build(workflow);
             ExecutionPlan restartPlan = partialRestartManager.createPartialPlanFromFailedNodes(
                 fullPlan, jdbcTemplate, executionId);
@@ -346,12 +354,13 @@ public class ExecutionApiService {
             String workflowName = original.getWorkflowName() + " (restart from failed)";
             String executionMode = "parallel";
 
-            String insertSql = "INSERT INTO workflow_executions (id, execution_id, workflow_name, status, start_time, execution_mode, parameters) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)";
-            jdbcTemplate.update(insertSql, newExecutionId, newExecutionId, workflowName, "running",
+            String recordId = UUID.randomUUID().toString();
+            String insertSql = "INSERT INTO workflow_executions (id, execution_id, workflow_id, workflow_name, status, start_time, execution_mode, parameters) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+            jdbcTemplate.update(insertSql, recordId, newExecutionId, workflowId, workflowName, "running",
                     System.currentTimeMillis(), executionMode, workflowPayload);
 
-            launchWorkflowJob(restartPlan, newExecutionId, executionMode);
+            launchWorkflowJob(restartPlan, newExecutionId, executionMode, workflowId);
 
             logger.info("Started restart from failed nodes for execution '{}', new execution '{}'",
                 executionId, newExecutionId);
