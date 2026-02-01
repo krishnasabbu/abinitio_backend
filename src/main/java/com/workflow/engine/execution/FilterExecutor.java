@@ -86,34 +86,41 @@ public class FilterExecutor implements NodeExecutor<Map<String, Object>, Map<Str
 
         return item -> {
             try {
-                Map<String, Object> itemWithConversions = new HashMap<>(item);
+                StandardEvaluationContext evalContext = new StandardEvaluationContext();
 
                 for (Map.Entry<String, Object> entry : item.entrySet()) {
-                    if (entry.getValue() instanceof String) {
-                        String strValue = (String) entry.getValue();
+                    String key = entry.getKey();
+                    Object value = entry.getValue();
+
+                    if (value instanceof String) {
+                        String strValue = (String) value;
                         try {
                             if (strValue.matches("-?\\d+(\\.\\d+)?")) {
                                 if (strValue.contains(".")) {
-                                    itemWithConversions.put(entry.getKey(), Double.parseDouble(strValue));
+                                    value = Double.parseDouble(strValue);
+                                    logger.info("Converted {} from '{}' to double", key, strValue);
                                 } else {
-                                    itemWithConversions.put(entry.getKey(), Long.parseLong(strValue));
+                                    value = Long.parseLong(strValue);
+                                    logger.info("Converted {} from '{}' to long", key, strValue);
                                 }
-                                logger.debug("Converted {} from string to number", entry.getKey());
                             }
-                        } catch (Exception ignore) {
+                        } catch (Exception ex) {
+                            logger.warn("Failed to convert {} value '{}': {}", key, strValue, ex.getMessage());
                         }
                     }
+
+                    evalContext.setVariable(key, value);
                 }
 
-                StandardEvaluationContext evalContext = new StandardEvaluationContext(itemWithConversions);
                 Object result = parser.parseExpression(condition).getValue(evalContext);
 
                 boolean passed = result instanceof Boolean && (Boolean) result;
+                logger.info("Condition '{}' evaluated to {} for item: {}", condition, passed, item);
 
                 if (isRouting) {
                     Map<String, Object> itemWithRoute = new HashMap<>(item);
                     itemWithRoute.put("_routePort", passed ? "out" : "reject");
-                    logger.debug("Item routed to: {} (condition result: {})", itemWithRoute.get("_routePort"), passed);
+                    logger.info("Item routed to: {}", itemWithRoute.get("_routePort"));
                     return itemWithRoute;
                 } else {
                     if (passed) {
@@ -125,8 +132,13 @@ public class FilterExecutor implements NodeExecutor<Map<String, Object>, Map<Str
                     }
                 }
             } catch (Exception e) {
-                logger.warn("Filter evaluation failed for item: {}", e.getMessage());
-                return isRouting ? item : null;
+                logger.error("Filter evaluation failed for item: {}", item, e);
+                if (isRouting) {
+                    Map<String, Object> itemWithRoute = new HashMap<>(item);
+                    itemWithRoute.put("_routePort", "out");
+                    return itemWithRoute;
+                }
+                return null;
             }
         };
     }
