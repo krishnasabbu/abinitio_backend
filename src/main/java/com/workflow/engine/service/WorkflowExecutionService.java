@@ -1,5 +1,7 @@
 package com.workflow.engine.service;
 
+import com.workflow.engine.api.dto.NodeStatusDto;
+import com.workflow.engine.api.dto.WorkflowExecutionResponseDto;
 import com.workflow.engine.graph.GraphValidator;
 import com.workflow.engine.model.WorkflowDefinition;
 import com.workflow.engine.planner.ExecutionPlanner;
@@ -12,6 +14,8 @@ import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Core service for executing workflow definitions.
@@ -128,6 +132,142 @@ public class WorkflowExecutionService {
             logStepExecutions(execution, workflow.getId());
             throw new RuntimeException("Workflow execution failed");
         }
+    }
+
+    /**
+     * Executes a workflow definition and returns execution response with node statuses.
+     *
+     * @param workflow the workflow definition to execute
+     * @return WorkflowExecutionResponseDto containing execution details and node statuses
+     * @throws IllegalArgumentException if workflow validation fails
+     * @throws RuntimeException if job execution fails
+     * @throws Exception if job launching fails
+     */
+    public WorkflowExecutionResponseDto executeWorkflowWithResponse(WorkflowDefinition workflow) throws Exception {
+        log.info("workflowId={}, Executing workflow with response", workflow.getId());
+        log.debug("workflowId={}, Starting workflow validation", workflow.getId());
+
+        GraphValidator.ValidationResult validationResult = graphValidator.validate(workflow);
+
+        if (!validationResult.isValid()) {
+            log.error("workflowId={}, Workflow validation failed: {}", workflow.getId(), validationResult);
+            throw new IllegalArgumentException("Workflow validation failed: " + validationResult.toString());
+        }
+
+        log.debug("workflowId={}, Validation passed, building execution plan", workflow.getId());
+
+        Job job = executionPlanner.planExecution(workflow);
+
+        log.debug("workflowId={}, Job built successfully: {}", workflow.getId(), job.getName());
+
+        JobParameters jobParameters = new JobParametersBuilder()
+            .addLong("timestamp", System.currentTimeMillis())
+            .addString("workflowId", workflow.getId())
+            .toJobParameters();
+
+        log.info("workflowId={}, Launching job execution: {}", workflow.getId(), job.getName());
+        JobExecution execution = jobLauncher.run(job, jobParameters);
+
+        log.info("workflowId={}, Job execution completed with status: {}", workflow.getId(), execution.getStatus());
+        log.debug("workflowId={}, Exit status: {}", workflow.getId(), execution.getExitStatus().getExitCode());
+
+        WorkflowExecutionResponseDto response = buildExecutionResponse(execution, workflow);
+
+        if (execution.getStatus() == BatchStatus.COMPLETED) {
+            log.info("workflowId={}, Workflow executed successfully!", workflow.getId());
+            logStepExecutions(execution, workflow.getId());
+        } else if (execution.getStatus() == BatchStatus.FAILED) {
+            log.error("workflowId={}, Workflow execution failed!", workflow.getId());
+            logStepExecutions(execution, workflow.getId());
+        }
+
+        return response;
+    }
+
+    /**
+     * Builds execution response DTO from job execution result.
+     *
+     * @param jobExecution the completed job execution
+     * @param workflow the workflow definition
+     * @return WorkflowExecutionResponseDto with all execution details
+     */
+    private WorkflowExecutionResponseDto buildExecutionResponse(JobExecution jobExecution, WorkflowDefinition workflow) {
+        WorkflowExecutionResponseDto response = new WorkflowExecutionResponseDto();
+
+        response.setExecutionId(String.valueOf(jobExecution.getId()));
+        response.setWorkflowId(workflow.getId());
+        response.setWorkflowName(workflow.getName());
+        response.setStatus(jobExecution.getStatus().toString());
+
+        if (jobExecution.getStartTime() != null) {
+            response.setStartTime(jobExecution.getStartTime().getTime());
+        }
+        if (jobExecution.getEndTime() != null) {
+            response.setEndTime(jobExecution.getEndTime().getTime());
+        }
+
+        if (jobExecution.getStartTime() != null && jobExecution.getEndTime() != null) {
+            long durationMillis = Duration.between(
+                jobExecution.getStartTime().toInstant(),
+                jobExecution.getEndTime().toInstant()
+            ).toMillis();
+            response.setExecutionTimeMs(durationMillis);
+        }
+
+        List<NodeStatusDto> nodeStatuses = new ArrayList<>();
+        int completed = 0;
+        int successful = 0;
+        int failed = 0;
+
+        for (StepExecution stepExecution : jobExecution.getStepExecutions()) {
+            NodeStatusDto nodeStatus = new NodeStatusDto();
+            nodeStatus.setNodeName(stepExecution.getStepName());
+            nodeStatus.setStatus(stepExecution.getStatus().toString());
+
+            if (stepExecution.getStartTime() != null) {
+                nodeStatus.setStartTime(stepExecution.getStartTime().getTime());
+            }
+            if (stepExecution.getEndTime() != null) {
+                nodeStatus.setEndTime(stepExecution.getEndTime().getTime());
+            }
+
+            if (stepExecution.getStartTime() != null && stepExecution.getEndTime() != null) {
+                long durationMillis = Duration.between(
+                    stepExecution.getStartTime().toInstant(),
+                    stepExecution.getEndTime().toInstant()
+                ).toMillis();
+                nodeStatus.setExecutionTimeMs(durationMillis);
+            }
+
+            nodeStatus.setRecordsRead((long) stepExecution.getReadCount());
+            nodeStatus.setRecordsWritten((long) stepExecution.getWriteCount());
+            nodeStatus.setSkipCount((long) stepExecution.getSkipCount());
+
+            if (stepExecution.getFailureExceptions() != null && !stepExecution.getFailureExceptions().isEmpty()) {
+                nodeStatus.setErrorMessage(stepExecution.getFailureExceptions().get(0).getMessage());
+            }
+
+            nodeStatuses.add(nodeStatus);
+
+            if (stepExecution.getStatus() == BatchStatus.COMPLETED) {
+                completed++;
+                successful++;
+            } else if (stepExecution.getStatus() == BatchStatus.FAILED) {
+                failed++;
+            }
+        }
+
+        response.setNodeStatuses(nodeStatuses);
+        response.setTotalNodes(jobExecution.getStepExecutions().size());
+        response.setCompletedNodes(completed);
+        response.setSuccessfulNodes(successful);
+        response.setFailedNodes(failed);
+
+        if (jobExecution.getExitStatus().getExitCode() != null && !jobExecution.getExitStatus().getExitCode().equals("COMPLETED")) {
+            response.setErrorMessage(jobExecution.getExitStatus().getExitDescription());
+        }
+
+        return response;
     }
 
     /**

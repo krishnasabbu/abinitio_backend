@@ -1,5 +1,6 @@
 package com.workflow.engine.controller;
 
+import com.workflow.engine.api.dto.WorkflowExecutionResponseDto;
 import com.workflow.engine.model.WorkflowDefinition;
 import com.workflow.engine.service.WorkflowExecutionService;
 import org.springframework.http.ResponseEntity;
@@ -44,22 +45,25 @@ public class WorkflowController {
      * Submits a workflow definition for execution.
      *
      * Accepts a workflow definition in the request body and submits it to the
-     * execution service. Returns immediately with a status indicating whether
-     * the submission was successful.
+     * execution service. Returns execution details including execution ID and node statuses.
      *
      * @param workflow the workflow definition to execute
-     * @return ResponseEntity with success or error message
+     * @return ResponseEntity with workflow execution response including ID and node statuses
      */
     @PostMapping("/execute")
-    public ResponseEntity<String> executeWorkflow(@RequestBody WorkflowDefinition workflow) {
+    public ResponseEntity<WorkflowExecutionResponseDto> executeWorkflow(@RequestBody WorkflowDefinition workflow) {
         logger.info("Received workflow execution request: {}", workflow.getName());
         try {
-            workflowExecutionService.executeWorkflow(workflow);
-            logger.info("Workflow execution started: {}", workflow.getName());
-            return ResponseEntity.ok("Workflow execution started");
+            WorkflowExecutionResponseDto response = workflowExecutionService.executeWorkflowWithResponse(workflow);
+            logger.info("Workflow execution completed: {}", workflow.getName());
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
             logger.error("Workflow execution failed: {}", workflow.getName(), e);
-            return ResponseEntity.badRequest().body("Workflow execution failed: " + e.getMessage());
+            WorkflowExecutionResponseDto errorResponse = new WorkflowExecutionResponseDto();
+            errorResponse.setWorkflowName(workflow.getName());
+            errorResponse.setStatus("FAILED");
+            errorResponse.setErrorMessage("Workflow execution failed: " + e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
         }
     }
 
