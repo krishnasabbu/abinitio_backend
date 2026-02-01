@@ -86,7 +86,26 @@ public class FilterExecutor implements NodeExecutor<Map<String, Object>, Map<Str
 
         return item -> {
             try {
-                StandardEvaluationContext evalContext = new StandardEvaluationContext(item);
+                Map<String, Object> itemWithConversions = new HashMap<>(item);
+
+                for (Map.Entry<String, Object> entry : item.entrySet()) {
+                    if (entry.getValue() instanceof String) {
+                        String strValue = (String) entry.getValue();
+                        try {
+                            if (strValue.matches("-?\\d+(\\.\\d+)?")) {
+                                if (strValue.contains(".")) {
+                                    itemWithConversions.put(entry.getKey(), Double.parseDouble(strValue));
+                                } else {
+                                    itemWithConversions.put(entry.getKey(), Long.parseLong(strValue));
+                                }
+                                logger.debug("Converted {} from string to number", entry.getKey());
+                            }
+                        } catch (Exception ignore) {
+                        }
+                    }
+                }
+
+                StandardEvaluationContext evalContext = new StandardEvaluationContext(itemWithConversions);
                 Object result = parser.parseExpression(condition).getValue(evalContext);
 
                 boolean passed = result instanceof Boolean && (Boolean) result;
@@ -94,7 +113,7 @@ public class FilterExecutor implements NodeExecutor<Map<String, Object>, Map<Str
                 if (isRouting) {
                     Map<String, Object> itemWithRoute = new HashMap<>(item);
                     itemWithRoute.put("_routePort", passed ? "out" : "reject");
-                    logger.debug("Item routed to: {}", itemWithRoute.get("_routePort"));
+                    logger.debug("Item routed to: {} (condition result: {})", itemWithRoute.get("_routePort"), passed);
                     return itemWithRoute;
                 } else {
                     if (passed) {
