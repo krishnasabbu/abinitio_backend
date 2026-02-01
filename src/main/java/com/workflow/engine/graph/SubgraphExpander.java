@@ -293,7 +293,7 @@ public class SubgraphExpander {
             newHints.setJoinNodeId(mappedJoinId);
             newHints.setMode(original.executionHints().getMode());
             newHints.setChunkSize(original.executionHints().getChunkSize());
-            newHints.setPartitions(original.executionHints().getPartitions());
+            newHints.setPartitionCount(original.executionHints().getPartitionCount());
         }
 
         return new StepNode(
