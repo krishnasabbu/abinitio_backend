@@ -3,6 +3,7 @@ package com.workflow.engine.execution;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.RoutingItemWriter;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
@@ -15,6 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -80,21 +82,32 @@ public class FilterExecutor implements NodeExecutor<Map<String, Object>, Map<Str
         String condition = config.get("condition").asText();
         logger.debug("Filter condition: {}", condition);
 
+        boolean isRouting = context instanceof RoutingNodeExecutionContext;
+
         return item -> {
             try {
                 StandardEvaluationContext evalContext = new StandardEvaluationContext(item);
                 Object result = parser.parseExpression(condition).getValue(evalContext);
 
-                if (result instanceof Boolean && (Boolean) result) {
-                    logger.debug("Item passed filter condition");
-                    return item;
+                boolean passed = result instanceof Boolean && (Boolean) result;
+
+                if (isRouting) {
+                    Map<String, Object> itemWithRoute = new HashMap<>(item);
+                    itemWithRoute.put("_routePort", passed ? "out" : "reject");
+                    logger.debug("Item routed to: {}", itemWithRoute.get("_routePort"));
+                    return itemWithRoute;
                 } else {
-                    logger.debug("Item filtered out (condition evaluated to false)");
-                    return null;
+                    if (passed) {
+                        logger.debug("Item passed filter condition");
+                        return item;
+                    } else {
+                        logger.debug("Item filtered out (condition evaluated to false)");
+                        return null;
+                    }
                 }
             } catch (Exception e) {
                 logger.warn("Filter evaluation failed for item: {}", e.getMessage());
-                return null;
+                return isRouting ? item : null;
             }
         };
     }
@@ -102,16 +115,26 @@ public class FilterExecutor implements NodeExecutor<Map<String, Object>, Map<Str
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
         logger.debug("Creating filter writer");
-        return items -> {
-            List<Map<String, Object>> outputList = new ArrayList<>();
-            for (Map<String, Object> item : items) {
-                if (item != null) {
-                    outputList.add(item);
+
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingContext = (RoutingNodeExecutionContext) context;
+            RoutingItemWriter routingWriter = new RoutingItemWriter(routingContext.getRoutingContext(), "_routePort");
+            return items -> {
+                logger.debug("Filter routing {} items", items.size());
+                routingWriter.write(items);
+            };
+        } else {
+            return items -> {
+                List<Map<String, Object>> outputList = new ArrayList<>();
+                for (Map<String, Object> item : items) {
+                    if (item != null) {
+                        outputList.add(item);
+                    }
                 }
-            }
-            logger.info("Filter output: {} items passed filter", outputList.size());
-            context.setVariable("outputItems", outputList);
-        };
+                logger.info("Filter output: {} items passed filter", outputList.size());
+                context.setVariable("outputItems", outputList);
+            };
+        }
     }
 
     @Override
