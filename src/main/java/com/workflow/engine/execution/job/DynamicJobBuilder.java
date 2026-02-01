@@ -1,6 +1,7 @@
 package com.workflow.engine.execution.job;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.workflow.engine.execution.routing.EdgeBufferStore;
 import com.workflow.engine.graph.ExecutionPlan;
 import com.workflow.engine.graph.ExecutionPlanValidator;
 import com.workflow.engine.graph.StepKind;
@@ -155,7 +156,10 @@ public class DynamicJobBuilder {
             BuildContext ctx = new BuildContext(expandedPlan, jobName);
 
             validateForkJoinStructure(ctx);
-            buildAllSteps(ctx);
+
+            EdgeBufferStore bufferStore = new EdgeBufferStore();
+            String executionId = effectiveWorkflowId;
+            buildAllSteps(ctx, bufferStore, executionId);
 
             Flow mainFlow = buildMainFlow(ctx);
 
@@ -314,7 +318,7 @@ public class DynamicJobBuilder {
         return null;
     }
 
-    private void buildAllSteps(BuildContext ctx) {
+    private void buildAllSteps(BuildContext ctx, EdgeBufferStore bufferStore, String executionId) {
         for (Map.Entry<String, StepNode> entry : ctx.plan.steps().entrySet()) {
             String nodeId = entry.getKey();
             StepNode node = entry.getValue();
@@ -323,7 +327,9 @@ public class DynamicJobBuilder {
             if (isBarrierOnly(node)) {
                 step = buildBarrierStep(ctx, node);
             } else {
-                step = stepFactory.buildStep(node);
+                step = stepFactory.buildStep(node, bufferStore, executionId);
+                logger.debug("Built step for node '{}' with routing (bufferStore provided, executionId={})",
+                    nodeId, executionId);
             }
 
             ctx.stepMap.put(nodeId, step);

@@ -1,9 +1,14 @@
 package com.workflow.engine.execution.routing;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.List;
 import java.util.Map;
 
 public class RoutingContext {
+
+    private static final Logger logger = LoggerFactory.getLogger(RoutingContext.class);
 
     private final String executionId;
     private final String sourceNodeId;
@@ -41,6 +46,8 @@ public class RoutingContext {
 
         for (OutputPort port : outputPorts) {
             if (routeKey.equals(port.sourcePort())) {
+                logger.debug("Routing record from {} port '{}' to node {} port '{}'",
+                    sourceNodeId, routeKey, port.targetNodeId(), port.targetPort());
                 bufferStore.addRecord(executionId, port.targetNodeId(), port.targetPort(), record);
                 return;
             }
@@ -51,10 +58,13 @@ public class RoutingContext {
 
     public void routeToDefault(Map<String, Object> record) {
         if (outputPorts.isEmpty()) {
+            logger.warn("Routing context for node {} has no output ports - data will be lost!", sourceNodeId);
             return;
         }
 
         OutputPort defaultPort = outputPorts.get(0);
+        logger.debug("Routing record from {} to default port: target node {} port '{}'",
+            sourceNodeId, defaultPort.targetNodeId(), defaultPort.targetPort());
         bufferStore.addRecord(executionId, defaultPort.targetNodeId(), defaultPort.targetPort(), record);
     }
 
