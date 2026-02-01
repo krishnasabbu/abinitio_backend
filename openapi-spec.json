@@ -1,0 +1,2331 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Workflow Engine API",
+    "description": "A comprehensive REST API for managing and executing data workflow orchestration. This API supports workflow creation, execution monitoring, connection management, logging, and metrics collection.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Workflow Engine Team",
+      "email": "support@workflow-engine.com"
+    },
+    "license": {
+      "name": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Development Server"
+    },
+    {
+      "url": "https://api.workflow-engine.com",
+      "description": "Production Server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Workflows",
+      "description": "Operations related to workflow definitions and management"
+    },
+    {
+      "name": "Executions",
+      "description": "Operations related to workflow execution and monitoring"
+    },
+    {
+      "name": "Connections",
+      "description": "Operations for managing database and Kafka connections"
+    },
+    {
+      "name": "Logs",
+      "description": "Operations for retrieving and searching execution logs"
+    },
+    {
+      "name": "Metrics",
+      "description": "Operations for retrieving system and execution metrics"
+    },
+    {
+      "name": "System",
+      "description": "System status and health endpoints"
+    }
+  ],
+  "paths": {
+    "/api/workflows": {
+      "get": {
+        "tags": ["Workflows"],
+        "summary": "List all workflows",
+        "description": "Retrieve a list of all workflow definitions stored in the system",
+        "operationId": "getAllWorkflows",
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved workflows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowDto"
+                  }
+                },
+                "example": [
+                  {
+                    "id": "wf-001",
+                    "name": "Employee Data Pipeline",
+                    "description": "Pipeline for processing employee data",
+                    "workflow_data": {
+                      "nodes": [],
+                      "edges": []
+                    },
+                    "created_at": "2024-01-15T10:30:00Z",
+                    "updated_at": "2024-01-15T10:30:00Z"
+                  }
+                ]
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": ["Workflows"],
+        "summary": "Create a new workflow",
+        "description": "Create a new workflow definition with the provided configuration",
+        "operationId": "createWorkflow",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowDto"
+              },
+              "example": {
+                "name": "Employee Data Pipeline",
+                "description": "Pipeline for processing employee data",
+                "workflow_data": {
+                  "nodes": [
+                    {
+                      "id": "source-1",
+                      "type": "FileSource",
+                      "config": {
+                        "filePath": "./data/employees.csv",
+                        "fileType": "csv"
+                      }
+                    },
+                    {
+                      "id": "filter-1",
+                      "type": "Filter",
+                      "config": {
+                        "condition": "salary > 50000"
+                      }
+                    }
+                  ],
+                  "edges": [
+                    {
+                      "source": "source-1",
+                      "target": "filter-1"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Workflow created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponse"
+                },
+                "example": {
+                  "id": "wf-001"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/workflows/{id}": {
+      "get": {
+        "tags": ["Workflows"],
+        "summary": "Get workflow by ID",
+        "description": "Retrieve a specific workflow definition by its ID",
+        "operationId": "getWorkflowById",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The workflow ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workflow found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "tags": ["Workflows"],
+        "summary": "Update workflow",
+        "description": "Update an existing workflow definition",
+        "operationId": "updateWorkflow",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Workflow updated successfully"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Workflows"],
+        "summary": "Delete workflow",
+        "description": "Delete a workflow definition by its ID",
+        "operationId": "deleteWorkflow",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Workflow deleted successfully"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/workflows/stats": {
+      "get": {
+        "tags": ["Workflows"],
+        "summary": "Get workflow statistics",
+        "description": "Retrieve aggregated statistics across all workflows",
+        "operationId": "getWorkflowStats",
+        "responses": {
+          "200": {
+            "description": "Statistics retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total_workflows": {
+                      "type": "integer"
+                    },
+                    "active_workflows": {
+                      "type": "integer"
+                    },
+                    "total_executions": {
+                      "type": "integer"
+                    },
+                    "success_rate": {
+                      "type": "number"
+                    }
+                  }
+                },
+                "example": {
+                  "total_workflows": 25,
+                  "active_workflows": 18,
+                  "total_executions": 1250,
+                  "success_rate": 0.95
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/workflows/recent": {
+      "get": {
+        "tags": ["Workflows"],
+        "summary": "Get recent workflows",
+        "description": "Retrieve the most recently created or modified workflows",
+        "operationId": "getRecentWorkflows",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": true,
+            "description": "Number of recent workflows to retrieve",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent workflows retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/workflows/{workflowId}/analytics": {
+      "get": {
+        "tags": ["Workflows"],
+        "summary": "Get workflow analytics",
+        "description": "Retrieve detailed analytics for a specific workflow",
+        "operationId": "getWorkflowAnalytics",
+        "parameters": [
+          {
+            "name": "workflowId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Analytics retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/execute": {
+      "post": {
+        "tags": ["Executions"],
+        "summary": "Execute workflow",
+        "description": "Execute a workflow with specified execution mode and configuration",
+        "operationId": "executeWorkflow",
+        "parameters": [
+          {
+            "name": "execution_mode",
+            "in": "query",
+            "required": true,
+            "description": "Mode of execution (SEQUENTIAL, PARALLEL, DISTRIBUTED)",
+            "schema": {
+              "type": "string",
+              "enum": ["SEQUENTIAL", "PARALLEL", "DISTRIBUTED"]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["workflow_id"],
+                "properties": {
+                  "workflow_id": {
+                    "type": "string",
+                    "description": "ID of the workflow to execute"
+                  },
+                  "parameters": {
+                    "type": "object",
+                    "description": "Runtime parameters for the workflow"
+                  }
+                }
+              },
+              "example": {
+                "workflow_id": "wf-001",
+                "parameters": {
+                  "input_file": "./data/employees.csv",
+                  "output_format": "json"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Workflow execution accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "execution_id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "execution_id": "exec-12345",
+                  "status": "RUNNING"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/executions": {
+      "get": {
+        "tags": ["Executions"],
+        "summary": "Get execution history",
+        "description": "Retrieve execution history, optionally filtered by workflow ID",
+        "operationId": "getExecutionHistory",
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "query",
+            "required": false,
+            "description": "Filter by workflow ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Execution history retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowExecutionDto"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/execution/{executionId}": {
+      "get": {
+        "tags": ["Executions"],
+        "summary": "Get execution by ID",
+        "description": "Retrieve detailed information about a specific execution",
+        "operationId": "getExecutionById",
+        "parameters": [
+          {
+            "name": "executionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Execution found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowExecutionDto"
+                },
+                "example": {
+                  "id": "exec-12345",
+                  "execution_id": "exec-12345",
+                  "workflow_name": "Employee Data Pipeline",
+                  "status": "COMPLETED",
+                  "start_time": 1705329000000,
+                  "end_time": 1705329300000,
+                  "total_nodes": 5,
+                  "completed_nodes": 5,
+                  "successful_nodes": 5,
+                  "failed_nodes": 0,
+                  "total_records": 1000,
+                  "total_execution_time_ms": 300000
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/executions/{executionId}/nodes": {
+      "get": {
+        "tags": ["Executions"],
+        "summary": "Get node executions",
+        "description": "Retrieve execution details for all nodes in a workflow execution",
+        "operationId": "getNodeExecutions",
+        "parameters": [
+          {
+            "name": "executionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Node executions retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NodeExecutionDto"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/executions/{executionId}/timeline": {
+      "get": {
+        "tags": ["Executions"],
+        "summary": "Get execution timeline",
+        "description": "Retrieve the execution timeline showing the sequence of node executions",
+        "operationId": "getExecutionTimeline",
+        "parameters": [
+          {
+            "name": "executionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Timeline retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/executions/{executionId}/metrics": {
+      "get": {
+        "tags": ["Executions"],
+        "summary": "Get execution metrics",
+        "description": "Retrieve performance metrics for a workflow execution",
+        "operationId": "getExecutionMetrics",
+        "parameters": [
+          {
+            "name": "executionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metrics retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/executions/{executionId}/bottlenecks": {
+      "get": {
+        "tags": ["Executions"],
+        "summary": "Get execution bottlenecks",
+        "description": "Identify performance bottlenecks in a workflow execution",
+        "operationId": "getExecutionBottlenecks",
+        "parameters": [
+          {
+            "name": "executionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "top_n",
+            "in": "query",
+            "required": false,
+            "description": "Number of top bottlenecks to return",
+            "schema": {
+              "type": "integer",
+              "default": 5
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bottlenecks identified successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/executions/{executionId}/rerun": {
+      "post": {
+        "tags": ["Executions"],
+        "summary": "Rerun execution",
+        "description": "Rerun a workflow execution, optionally from a specific node",
+        "operationId": "rerunExecution",
+        "parameters": [
+          {
+            "name": "executionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from_node_id",
+            "in": "query",
+            "required": false,
+            "description": "Node ID to restart from (for partial reruns)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Execution rerun accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/executions/{executionId}/rerun-from-failed": {
+      "post": {
+        "tags": ["Executions"],
+        "summary": "Rerun from failed node",
+        "description": "Rerun a workflow execution from the first failed node",
+        "operationId": "rerunFromFailed",
+        "parameters": [
+          {
+            "name": "executionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Execution rerun accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/executions/{executionId}/cancel": {
+      "post": {
+        "tags": ["Executions"],
+        "summary": "Cancel execution",
+        "description": "Cancel an ongoing workflow execution",
+        "operationId": "cancelExecution",
+        "parameters": [
+          {
+            "name": "executionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Execution cancelled successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/executions/recent": {
+      "get": {
+        "tags": ["Executions"],
+        "summary": "Get recent executions",
+        "description": "Retrieve the most recent workflow executions",
+        "operationId": "getRecentExecutions",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": true,
+            "description": "Number of recent executions to retrieve",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent executions retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/database-connections": {
+      "get": {
+        "tags": ["Connections"],
+        "summary": "List database connections",
+        "description": "Retrieve all configured database connections",
+        "operationId": "getAllDatabaseConnections",
+        "responses": {
+          "200": {
+            "description": "Database connections retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DatabaseConnectionDto"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": ["Connections"],
+        "summary": "Create database connection",
+        "description": "Create a new database connection configuration",
+        "operationId": "createDatabaseConnection",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseConnectionDto"
+              },
+              "example": {
+                "name": "Production Database",
+                "connection_type": "PostgreSQL",
+                "host": "db.example.com",
+                "port": 5432,
+                "database": "production",
+                "username": "dbuser",
+                "password": "secure_password",
+                "ssl_enabled": true,
+                "is_active": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Database connection created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponse"
+                },
+                "example": {
+                  "id": "db-conn-001"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/database-connections/{id}": {
+      "put": {
+        "tags": ["Connections"],
+        "summary": "Update database connection",
+        "description": "Update an existing database connection configuration",
+        "operationId": "updateDatabaseConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseConnectionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Database connection updated successfully"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Connections"],
+        "summary": "Delete database connection",
+        "description": "Delete a database connection configuration",
+        "operationId": "deleteDatabaseConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Database connection deleted successfully"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/test-db-connection/{id}": {
+      "post": {
+        "tags": ["Connections"],
+        "summary": "Test database connection",
+        "description": "Test the connectivity of a database connection",
+        "operationId": "testDatabaseConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connection test result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Connection successful"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/kafka-connections": {
+      "get": {
+        "tags": ["Connections"],
+        "summary": "List Kafka connections",
+        "description": "Retrieve all configured Kafka connections",
+        "operationId": "getAllKafkaConnections",
+        "responses": {
+          "200": {
+            "description": "Kafka connections retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KafkaConnectionDto"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": ["Connections"],
+        "summary": "Create Kafka connection",
+        "description": "Create a new Kafka connection configuration",
+        "operationId": "createKafkaConnection",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KafkaConnectionDto"
+              },
+              "example": {
+                "name": "Production Kafka",
+                "bootstrap_servers": "kafka-1.example.com:9092,kafka-2.example.com:9092",
+                "security_protocol": "SASL_SSL",
+                "sasl_mechanism": "PLAIN",
+                "sasl_username": "kafka_user",
+                "sasl_password": "secure_password",
+                "consumer_group": "workflow-engine",
+                "is_active": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Kafka connection created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponse"
+                },
+                "example": {
+                  "id": "kafka-conn-001"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/kafka-connections/{id}": {
+      "put": {
+        "tags": ["Connections"],
+        "summary": "Update Kafka connection",
+        "description": "Update an existing Kafka connection configuration",
+        "operationId": "updateKafkaConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KafkaConnectionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Kafka connection updated successfully"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Connections"],
+        "summary": "Delete Kafka connection",
+        "description": "Delete a Kafka connection configuration",
+        "operationId": "deleteKafkaConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Kafka connection deleted successfully"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/test-kafka-connection/{id}": {
+      "post": {
+        "tags": ["Connections"],
+        "summary": "Test Kafka connection",
+        "description": "Test the connectivity of a Kafka connection",
+        "operationId": "testKafkaConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connection test result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Connection successful"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/logs/executions": {
+      "get": {
+        "tags": ["Logs"],
+        "summary": "List execution logs",
+        "description": "Retrieve a list of all execution logs",
+        "operationId": "listExecutionLogs",
+        "responses": {
+          "200": {
+            "description": "Execution logs retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/logs/executions/{executionId}": {
+      "get": {
+        "tags": ["Logs"],
+        "summary": "Get execution logs",
+        "description": "Retrieve detailed logs for a specific execution with filtering options",
+        "operationId": "getExecutionLogs",
+        "parameters": [
+          {
+            "name": "executionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "required": false,
+            "description": "Filter by log level (INFO, WARN, ERROR, DEBUG)",
+            "schema": {
+              "type": "string",
+              "enum": ["INFO", "WARN", "ERROR", "DEBUG"]
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "query",
+            "required": false,
+            "description": "Filter by node ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "description": "Search term to filter logs",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "start_time",
+            "in": "query",
+            "required": false,
+            "description": "Start time in milliseconds since epoch",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "end_time",
+            "in": "query",
+            "required": false,
+            "description": "End time in milliseconds since epoch",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum number of logs to return",
+            "schema": {
+              "type": "integer",
+              "default": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "Offset for pagination",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Execution logs retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/logs/nodes/{executionId}/{nodeId}": {
+      "get": {
+        "tags": ["Logs"],
+        "summary": "Get node logs",
+        "description": "Retrieve logs for a specific node in an execution",
+        "operationId": "getNodeLogs",
+        "parameters": [
+          {
+            "name": "executionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "nodeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "required": false,
+            "description": "Filter by log level",
+            "schema": {
+              "type": "string",
+              "enum": ["INFO", "WARN", "ERROR", "DEBUG"]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum number of logs to return",
+            "schema": {
+              "type": "integer",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Node logs retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/logs/search": {
+      "get": {
+        "tags": ["Logs"],
+        "summary": "Search logs",
+        "description": "Search logs across executions with various filters",
+        "operationId": "searchLogs",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": true,
+            "description": "Search term",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "required": false,
+            "description": "Filter by log level",
+            "schema": {
+              "type": "string",
+              "enum": ["INFO", "WARN", "ERROR", "DEBUG"]
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "query",
+            "required": false,
+            "description": "Filter by execution ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "start_time",
+            "in": "query",
+            "required": false,
+            "description": "Start time in milliseconds since epoch",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "end_time",
+            "in": "query",
+            "required": false,
+            "description": "End time in milliseconds since epoch",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum number of results to return",
+            "schema": {
+              "type": "integer",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/logs/summary/{executionId}": {
+      "get": {
+        "tags": ["Logs"],
+        "summary": "Get log summary",
+        "description": "Retrieve a summary of logs for an execution",
+        "operationId": "getLogSummary",
+        "parameters": [
+          {
+            "name": "executionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Log summary retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/analytics/execution-logs/{executionId}": {
+      "get": {
+        "tags": ["Logs"],
+        "summary": "Get analytics execution logs",
+        "description": "Retrieve execution logs formatted for analytics",
+        "operationId": "getAnalyticsExecutionLogs",
+        "parameters": [
+          {
+            "name": "executionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum number of logs to return",
+            "schema": {
+              "type": "integer",
+              "default": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Analytics logs retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/analytics/logs/{executionId}": {
+      "get": {
+        "tags": ["Logs"],
+        "summary": "Get log analysis",
+        "description": "Retrieve analyzed logs with insights for an execution",
+        "operationId": "getLogAnalysis",
+        "parameters": [
+          {
+            "name": "executionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Log analysis retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/metrics/system/resources": {
+      "get": {
+        "tags": ["Metrics"],
+        "summary": "Get system resources",
+        "description": "Retrieve current system resource utilization metrics",
+        "operationId": "getSystemResources",
+        "responses": {
+          "200": {
+            "description": "System resources retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cpu_usage": {
+                      "type": "number"
+                    },
+                    "memory_usage": {
+                      "type": "number"
+                    },
+                    "disk_usage": {
+                      "type": "number"
+                    },
+                    "timestamp": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "example": {
+                  "cpu_usage": 45.5,
+                  "memory_usage": 62.3,
+                  "disk_usage": 75.8,
+                  "timestamp": 1705329300000
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/metrics/system/timeseries": {
+      "get": {
+        "tags": ["Metrics"],
+        "summary": "Get system timeseries metrics",
+        "description": "Retrieve system metrics over a time period",
+        "operationId": "getSystemTimeseries",
+        "parameters": [
+          {
+            "name": "hours",
+            "in": "query",
+            "required": false,
+            "description": "Number of hours of historical data to retrieve",
+            "schema": {
+              "type": "integer",
+              "default": 24,
+              "minimum": 1,
+              "maximum": 720
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Timeseries metrics retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/metrics/executions/{executionId}/resources": {
+      "get": {
+        "tags": ["Metrics"],
+        "summary": "Get execution resources",
+        "description": "Retrieve resource utilization metrics for a specific execution",
+        "operationId": "getExecutionResources",
+        "parameters": [
+          {
+            "name": "executionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Execution resources retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/metrics/nodes/{executionId}/{nodeId}/resources": {
+      "get": {
+        "tags": ["Metrics"],
+        "summary": "Get node resources",
+        "description": "Retrieve resource utilization metrics for a specific node",
+        "operationId": "getNodeResources",
+        "parameters": [
+          {
+            "name": "executionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "nodeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Node resources retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/metrics/execution-modes": {
+      "get": {
+        "tags": ["Metrics"],
+        "summary": "Get execution modes metrics",
+        "description": "Retrieve metrics grouped by execution mode",
+        "operationId": "getExecutionModes",
+        "responses": {
+          "200": {
+            "description": "Execution modes metrics retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/metrics/system/overview": {
+      "get": {
+        "tags": ["Metrics"],
+        "summary": "Get system overview",
+        "description": "Retrieve a comprehensive system overview",
+        "operationId": "getSystemOverview",
+        "responses": {
+          "200": {
+            "description": "System overview retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/metrics/executions/trends": {
+      "get": {
+        "tags": ["Metrics"],
+        "summary": "Get execution trends",
+        "description": "Retrieve execution trends over time",
+        "operationId": "getExecutionTrends",
+        "responses": {
+          "200": {
+            "description": "Execution trends retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/metrics/executions/heatmap": {
+      "get": {
+        "tags": ["Metrics"],
+        "summary": "Get execution heatmap",
+        "description": "Retrieve execution heatmap data for visualization",
+        "operationId": "getExecutionHeatmap",
+        "responses": {
+          "200": {
+            "description": "Execution heatmap retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/metrics/insights": {
+      "get": {
+        "tags": ["Metrics"],
+        "summary": "Get system insights",
+        "description": "Retrieve AI-powered insights about system performance",
+        "operationId": "getSystemInsights",
+        "responses": {
+          "200": {
+            "description": "System insights retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/system/status": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Get system status",
+        "description": "Retrieve current system status and health information",
+        "operationId": "getSystemStatus",
+        "responses": {
+          "200": {
+            "description": "System status retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": ["UP", "DEGRADED", "DOWN"]
+                    },
+                    "timestamp": {
+                      "type": "integer"
+                    },
+                    "uptime_ms": {
+                      "type": "integer"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "status": "UP",
+                  "timestamp": 1705329300000,
+                  "uptime_ms": 86400000,
+                  "version": "1.0.0"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "WorkflowDto": {
+        "type": "object",
+        "description": "Workflow definition with metadata and configuration",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique workflow identifier"
+          },
+          "name": {
+            "type": "string",
+            "description": "Workflow name"
+          },
+          "description": {
+            "type": "string",
+            "description": "Workflow description"
+          },
+          "workflow_data": {
+            "type": "object",
+            "description": "Workflow configuration containing nodes and edges"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Workflow creation timestamp"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Workflow last update timestamp"
+          }
+        },
+        "required": ["name", "workflow_data"]
+      },
+      "WorkflowExecutionDto": {
+        "type": "object",
+        "description": "Details of a workflow execution",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Execution record identifier"
+          },
+          "execution_id": {
+            "type": "string",
+            "description": "Unique execution identifier"
+          },
+          "workflow_name": {
+            "type": "string",
+            "description": "Name of the executed workflow"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["PENDING", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"],
+            "description": "Current execution status"
+          },
+          "start_time": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Execution start time in milliseconds since epoch"
+          },
+          "end_time": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Execution end time in milliseconds since epoch"
+          },
+          "total_nodes": {
+            "type": "integer",
+            "description": "Total number of nodes in the workflow"
+          },
+          "completed_nodes": {
+            "type": "integer",
+            "description": "Number of completed nodes"
+          },
+          "successful_nodes": {
+            "type": "integer",
+            "description": "Number of successfully executed nodes"
+          },
+          "failed_nodes": {
+            "type": "integer",
+            "description": "Number of failed nodes"
+          },
+          "total_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total records processed"
+          },
+          "total_execution_time_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total execution time in milliseconds"
+          },
+          "error_message": {
+            "type": "string",
+            "description": "Error message if execution failed"
+          }
+        }
+      },
+      "NodeExecutionDto": {
+        "type": "object",
+        "description": "Details of a single node execution within a workflow",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Node execution record identifier"
+          },
+          "execution_id": {
+            "type": "string",
+            "description": "Parent execution identifier"
+          },
+          "node_id": {
+            "type": "string",
+            "description": "Node identifier"
+          },
+          "node_label": {
+            "type": "string",
+            "description": "Human-readable node label"
+          },
+          "node_type": {
+            "type": "string",
+            "description": "Type of node (e.g., FileSource, Filter, Join)"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["PENDING", "RUNNING", "COMPLETED", "FAILED", "SKIPPED"],
+            "description": "Node execution status"
+          },
+          "start_time": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Node execution start time in milliseconds since epoch"
+          },
+          "end_time": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Node execution end time in milliseconds since epoch"
+          },
+          "execution_time_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Node execution duration in milliseconds"
+          },
+          "records_processed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of records processed by this node"
+          },
+          "retry_count": {
+            "type": "integer",
+            "description": "Number of retries for this node"
+          },
+          "error_message": {
+            "type": "string",
+            "description": "Error message if node execution failed"
+          }
+        }
+      },
+      "DatabaseConnectionDto": {
+        "type": "object",
+        "description": "Database connection configuration",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Connection identifier"
+          },
+          "name": {
+            "type": "string",
+            "description": "Connection name"
+          },
+          "connection_type": {
+            "type": "string",
+            "enum": ["PostgreSQL", "MySQL", "Oracle", "SQL Server", "H2"],
+            "description": "Type of database"
+          },
+          "host": {
+            "type": "string",
+            "description": "Database host address"
+          },
+          "port": {
+            "type": "integer",
+            "description": "Database port"
+          },
+          "database": {
+            "type": "string",
+            "description": "Database name"
+          },
+          "username": {
+            "type": "string",
+            "description": "Database username"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "description": "Database password"
+          },
+          "ssl_enabled": {
+            "type": "boolean",
+            "description": "Whether SSL is enabled"
+          },
+          "ssl_cert": {
+            "type": "string",
+            "description": "SSL certificate path or content"
+          },
+          "additional_params": {
+            "type": "object",
+            "description": "Additional connection parameters"
+          },
+          "is_active": {
+            "type": "boolean",
+            "description": "Whether the connection is active"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Connection creation timestamp"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Connection last update timestamp"
+          }
+        },
+        "required": ["name", "connection_type", "host", "port", "database", "username"]
+      },
+      "KafkaConnectionDto": {
+        "type": "object",
+        "description": "Kafka connection configuration",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Connection identifier"
+          },
+          "name": {
+            "type": "string",
+            "description": "Connection name"
+          },
+          "bootstrap_servers": {
+            "type": "string",
+            "description": "Comma-separated list of Kafka bootstrap servers"
+          },
+          "security_protocol": {
+            "type": "string",
+            "enum": ["PLAINTEXT", "SASL_PLAINTEXT", "SASL_SSL", "SSL"],
+            "description": "Security protocol"
+          },
+          "sasl_mechanism": {
+            "type": "string",
+            "enum": ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"],
+            "description": "SASL mechanism if applicable"
+          },
+          "sasl_username": {
+            "type": "string",
+            "description": "SASL username"
+          },
+          "sasl_password": {
+            "type": "string",
+            "format": "password",
+            "description": "SASL password"
+          },
+          "ssl_cert": {
+            "type": "string",
+            "description": "SSL certificate path or content"
+          },
+          "ssl_key": {
+            "type": "string",
+            "description": "SSL key path or content"
+          },
+          "consumer_group": {
+            "type": "string",
+            "description": "Kafka consumer group"
+          },
+          "additional_config": {
+            "type": "object",
+            "description": "Additional Kafka configuration"
+          },
+          "is_active": {
+            "type": "boolean",
+            "description": "Whether the connection is active"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Connection creation timestamp"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Connection last update timestamp"
+          }
+        },
+        "required": ["name", "bootstrap_servers"]
+      },
+      "IdResponse": {
+        "type": "object",
+        "description": "Response containing a generated ID",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Generated resource identifier"
+          }
+        },
+        "required": ["id"]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "description": "Error response",
+        "properties": {
+          "timestamp": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Error timestamp"
+          },
+          "status": {
+            "type": "integer",
+            "description": "HTTP status code"
+          },
+          "error": {
+            "type": "string",
+            "description": "Error type"
+          },
+          "message": {
+            "type": "string",
+            "description": "Error message"
+          },
+          "path": {
+            "type": "string",
+            "description": "Request path"
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Bad request - invalid parameters or request body",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "timestamp": 1705329300000,
+              "status": 400,
+              "error": "Bad Request",
+              "message": "Invalid request parameters",
+              "path": "/api/workflows"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "timestamp": 1705329300000,
+              "status": 404,
+              "error": "Not Found",
+              "message": "Workflow with ID 'wf-001' not found",
+              "path": "/api/workflows/wf-001"
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Internal server error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "timestamp": 1705329300000,
+              "status": 500,
+              "error": "Internal Server Error",
+              "message": "An unexpected error occurred",
+              "path": "/api/workflows"
+            }
+          }
+        }
+      }
+    }
+  }
+}
