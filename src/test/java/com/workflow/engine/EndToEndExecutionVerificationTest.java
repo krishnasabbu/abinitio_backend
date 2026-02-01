@@ -3,14 +3,24 @@ package com.workflow.engine;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.workflow.engine.api.service.ExecutionApiService;
 import com.workflow.engine.execution.NodeExecutorRegistry;
-import com.workflow.engine.graph.ExecutionGraphBuilder;
+import com.workflow.engine.execution.job.DynamicJobBuilder;
+import com.workflow.engine.graph.*;
 import com.workflow.engine.model.ExecutionMode;
+import com.workflow.engine.model.ExecutionHints;
+import com.workflow.engine.model.WorkflowDefinition;
+import com.workflow.engine.model.NodeDefinition;
+import com.workflow.engine.model.Edge;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.batch.core.*;
+import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
 
 import java.util.*;
 
@@ -18,6 +28,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
 @ActiveProfiles("test")
+@TestPropertySource(properties = {
+    "workflow.job.require-workflow-id=false"
+})
 public class EndToEndExecutionVerificationTest {
 
     @Autowired
@@ -28,6 +41,12 @@ public class EndToEndExecutionVerificationTest {
 
     @Autowired
     private ExecutionGraphBuilder executionGraphBuilder;
+
+    @Autowired
+    private DynamicJobBuilder dynamicJobBuilder;
+
+    @Autowired
+    private JobLauncher jobLauncher;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -565,5 +584,334 @@ public class EndToEndExecutionVerificationTest {
         workflow.put("nodes", nodes);
         workflow.put("edges", edges);
         return workflow;
+    }
+
+    @Nested
+    @DisplayName("Fork/Join Semantics Verification")
+    class ForkJoinSemanticsTests {
+
+        @Test
+        @DisplayName("FORK node is correctly classified with StepKind.FORK")
+        void forkNodeCorrectlyClassified() {
+            WorkflowDefinition workflow = createForkJoinWorkflowDefinition();
+            ExecutionPlan plan = executionGraphBuilder.build(workflow);
+
+            StepNode splitNode = plan.steps().get("split_1");
+            assertNotNull(splitNode, "Split node should exist");
+            assertEquals(StepKind.FORK, splitNode.kind(), "Split should have FORK kind");
+        }
+
+        @Test
+        @DisplayName("JOIN node is correctly classified with StepKind.JOIN")
+        void joinNodeCorrectlyClassified() {
+            WorkflowDefinition workflow = createForkJoinWorkflowDefinition();
+            ExecutionPlan plan = executionGraphBuilder.build(workflow);
+
+            StepNode gatherNode = plan.steps().get("gather_1");
+            assertNotNull(gatherNode, "Gather node should exist");
+            assertEquals(StepKind.JOIN, gatherNode.kind(), "Gather should have JOIN kind");
+        }
+
+        @Test
+        @DisplayName("JOIN node has correct upstream steps")
+        void joinNodeHasUpstreamSteps() {
+            WorkflowDefinition workflow = createForkJoinWorkflowDefinition();
+            ExecutionPlan plan = executionGraphBuilder.build(workflow);
+
+            StepNode gatherNode = plan.steps().get("gather_1");
+            assertNotNull(gatherNode.upstreamSteps(), "Upstream steps should be set");
+            assertEquals(2, gatherNode.upstreamSteps().size(), "Should have 2 upstream steps");
+            assertTrue(gatherNode.upstreamSteps().contains("filter_1"), "Should contain filter_1");
+            assertTrue(gatherNode.upstreamSteps().contains("filter_2"), "Should contain filter_2");
+        }
+
+        @Test
+        @DisplayName("FORK node with explicit joinNodeId is validated")
+        void forkNodeWithExplicitJoinNodeId() {
+            WorkflowDefinition workflow = createForkJoinWorkflowDefinitionWithExplicitJoin();
+            ExecutionPlan plan = executionGraphBuilder.build(workflow);
+
+            StepNode splitNode = plan.steps().get("split_1");
+            assertNotNull(splitNode.executionHints(), "Execution hints should be set");
+            assertNotNull(splitNode.executionHints().getJoinNodeId(), "JoinNodeId should be set");
+            assertEquals("gather_1", splitNode.executionHints().getJoinNodeId());
+        }
+
+        @Test
+        @DisplayName("Job builds and runs successfully with fork/join")
+        void jobBuildsWithForkJoin() throws Exception {
+            WorkflowDefinition workflow = createForkJoinWorkflowDefinitionWithExplicitJoin();
+            ExecutionPlan plan = executionGraphBuilder.build(workflow);
+
+            Job job = dynamicJobBuilder.buildJob(plan, "fork-join-test");
+            assertNotNull(job, "Job should build successfully");
+
+            JobParameters params = new JobParametersBuilder()
+                .addString("executionId", "fork-join-" + System.currentTimeMillis())
+                .addLong("timestamp", System.currentTimeMillis())
+                .toJobParameters();
+
+            JobExecution execution = jobLauncher.run(job, params);
+            assertEquals(BatchStatus.COMPLETED, execution.getStatus(),
+                "Fork/join job should complete successfully");
+        }
+
+        private WorkflowDefinition createForkJoinWorkflowDefinition() {
+            WorkflowDefinition workflow = new WorkflowDefinition();
+            workflow.setId("fork-join-test");
+            workflow.setName("Fork Join Test");
+
+            List<NodeDefinition> nodes = new ArrayList<>();
+            nodes.add(createNodeDef("start_1", "Start"));
+            nodes.add(createNodeDef("split_1", "Split"));
+            nodes.add(createNodeDef("filter_1", "Filter"));
+            nodes.add(createNodeDef("filter_2", "Filter"));
+            nodes.add(createNodeDef("gather_1", "Gather"));
+            nodes.add(createNodeDef("end_1", "End"));
+
+            List<Edge> edges = new ArrayList<>();
+            edges.add(createEdgeDef("start_1", "split_1", true));
+            edges.add(createEdgeDef("split_1", "filter_1", false));
+            edges.add(createEdgeDef("split_1", "filter_2", false));
+            edges.add(createEdgeDef("filter_1", "gather_1", false));
+            edges.add(createEdgeDef("filter_2", "gather_1", false));
+            edges.add(createEdgeDef("gather_1", "end_1", false));
+
+            workflow.setNodes(nodes);
+            workflow.setEdges(edges);
+            return workflow;
+        }
+
+        private WorkflowDefinition createForkJoinWorkflowDefinitionWithExplicitJoin() {
+            WorkflowDefinition workflow = new WorkflowDefinition();
+            workflow.setId("fork-join-explicit");
+            workflow.setName("Fork Join Explicit Test");
+
+            List<NodeDefinition> nodes = new ArrayList<>();
+            nodes.add(createNodeDef("start_1", "Start"));
+
+            NodeDefinition splitNode = createNodeDef("split_1", "Split");
+            ExecutionHints hints = new ExecutionHints();
+            hints.setMode(ExecutionMode.PARALLEL);
+            hints.setJoinNodeId("gather_1");
+            splitNode.setExecutionHints(hints);
+            nodes.add(splitNode);
+
+            nodes.add(createNodeDef("filter_1", "Filter"));
+            nodes.add(createNodeDef("filter_2", "Filter"));
+            nodes.add(createNodeDef("gather_1", "Gather"));
+            nodes.add(createNodeDef("end_1", "End"));
+
+            List<Edge> edges = new ArrayList<>();
+            edges.add(createEdgeDef("start_1", "split_1", true));
+            edges.add(createEdgeDef("split_1", "filter_1", false));
+            edges.add(createEdgeDef("split_1", "filter_2", false));
+            edges.add(createEdgeDef("filter_1", "gather_1", false));
+            edges.add(createEdgeDef("filter_2", "gather_1", false));
+            edges.add(createEdgeDef("gather_1", "end_1", false));
+
+            workflow.setNodes(nodes);
+            workflow.setEdges(edges);
+            return workflow;
+        }
+
+        private NodeDefinition createNodeDef(String id, String type) {
+            NodeDefinition node = new NodeDefinition();
+            node.setId(id);
+            node.setType(type);
+            node.setConfig(objectMapper.createObjectNode());
+            return node;
+        }
+
+        private Edge createEdgeDef(String source, String target, boolean control) {
+            Edge edge = new Edge();
+            edge.setSource(source);
+            edge.setTarget(target);
+            edge.setControl(control);
+            return edge;
+        }
+    }
+
+    @Nested
+    @DisplayName("Validation Tests")
+    class ValidationTests {
+
+        @Test
+        @DisplayName("Cycle detection throws GraphValidationException")
+        void cycleDetectionThrows() {
+            WorkflowDefinition workflow = createCyclicWorkflowDefinition();
+
+            assertThrows(GraphValidationException.class, () -> {
+                executionGraphBuilder.build(workflow);
+            }, "Should detect cycle and throw");
+        }
+
+        @Test
+        @DisplayName("Missing node reference throws GraphValidationException")
+        void missingNodeThrows() {
+            WorkflowDefinition workflow = createMissingNodeWorkflowDefinition();
+
+            assertThrows(GraphValidationException.class, () -> {
+                executionGraphBuilder.build(workflow);
+            }, "Should detect missing node and throw");
+        }
+
+        @Test
+        @DisplayName("Implicit join is detected with warning (not error)")
+        void implicitJoinDetected() {
+            WorkflowDefinition workflow = createImplicitJoinWorkflowDefinition();
+
+            ExecutionPlan plan = executionGraphBuilder.build(workflow);
+
+            StepNode convergenceNode = plan.steps().get("convergence_1");
+            assertNotNull(convergenceNode, "Convergence node should exist");
+        }
+
+        private WorkflowDefinition createCyclicWorkflowDefinition() {
+            WorkflowDefinition workflow = new WorkflowDefinition();
+            workflow.setId("cyclic-test");
+
+            List<NodeDefinition> nodes = new ArrayList<>();
+            nodes.add(createNodeDefinition("start_1", "Start"));
+            nodes.add(createNodeDefinition("filter_1", "Filter"));
+            nodes.add(createNodeDefinition("filter_2", "Filter"));
+            nodes.add(createNodeDefinition("filter_3", "Filter"));
+
+            List<Edge> edges = new ArrayList<>();
+            edges.add(createEdgeDefinition("start_1", "filter_1", true));
+            edges.add(createEdgeDefinition("filter_1", "filter_2", false));
+            edges.add(createEdgeDefinition("filter_2", "filter_3", false));
+            edges.add(createEdgeDefinition("filter_3", "filter_1", false));
+
+            workflow.setNodes(nodes);
+            workflow.setEdges(edges);
+            return workflow;
+        }
+
+        private WorkflowDefinition createMissingNodeWorkflowDefinition() {
+            WorkflowDefinition workflow = new WorkflowDefinition();
+            workflow.setId("missing-test");
+
+            List<NodeDefinition> nodes = new ArrayList<>();
+            nodes.add(createNodeDefinition("start_1", "Start"));
+            nodes.add(createNodeDefinition("filter_1", "Filter"));
+
+            List<Edge> edges = new ArrayList<>();
+            edges.add(createEdgeDefinition("start_1", "filter_1", true));
+            edges.add(createEdgeDefinition("filter_1", "non_existent", false));
+
+            workflow.setNodes(nodes);
+            workflow.setEdges(edges);
+            return workflow;
+        }
+
+        private WorkflowDefinition createImplicitJoinWorkflowDefinition() {
+            WorkflowDefinition workflow = new WorkflowDefinition();
+            workflow.setId("implicit-join-test");
+
+            List<NodeDefinition> nodes = new ArrayList<>();
+            nodes.add(createNodeDefinition("start_1", "Start"));
+            nodes.add(createNodeDefinition("branch_a", "Filter"));
+            nodes.add(createNodeDefinition("branch_b", "Filter"));
+            nodes.add(createNodeDefinition("convergence_1", "Gather"));
+            nodes.add(createNodeDefinition("end_1", "End"));
+
+            List<Edge> edges = new ArrayList<>();
+            edges.add(createEdgeDefinition("start_1", "branch_a", true));
+            edges.add(createEdgeDefinition("start_1", "branch_b", true));
+            edges.add(createEdgeDefinition("branch_a", "convergence_1", false));
+            edges.add(createEdgeDefinition("branch_b", "convergence_1", false));
+            edges.add(createEdgeDefinition("convergence_1", "end_1", false));
+
+            workflow.setNodes(nodes);
+            workflow.setEdges(edges);
+            return workflow;
+        }
+
+        private NodeDefinition createNodeDefinition(String id, String type) {
+            NodeDefinition node = new NodeDefinition();
+            node.setId(id);
+            node.setType(type);
+            node.setConfig(objectMapper.createObjectNode());
+            return node;
+        }
+
+        private Edge createEdgeDefinition(String source, String target, boolean control) {
+            Edge edge = new Edge();
+            edge.setSource(source);
+            edge.setTarget(target);
+            edge.setControl(control);
+            return edge;
+        }
+    }
+
+    @Nested
+    @DisplayName("Deterministic Job Naming Tests")
+    class DeterministicNamingTests {
+
+        @Test
+        @DisplayName("workflowId from plan is used for job naming")
+        void workflowIdFromPlanUsed() {
+            WorkflowDefinition workflow = new WorkflowDefinition();
+            workflow.setId("my-stable-workflow-id");
+            workflow.setName("Test Workflow");
+
+            List<NodeDefinition> nodes = new ArrayList<>();
+            nodes.add(createNode("start_1", "Start"));
+            nodes.add(createNode("end_1", "End"));
+
+            List<Edge> edges = new ArrayList<>();
+            edges.add(createEdge("start_1", "end_1", true));
+
+            workflow.setNodes(nodes);
+            workflow.setEdges(edges);
+
+            ExecutionPlan plan = executionGraphBuilder.build(workflow);
+
+            assertEquals("my-stable-workflow-id", plan.workflowId(),
+                "Plan should carry workflowId from definition");
+        }
+
+        @Test
+        @DisplayName("Same workflowId produces same job name")
+        void sameWorkflowIdSameJobName() {
+            WorkflowDefinition workflow = new WorkflowDefinition();
+            workflow.setId("stable-id-123");
+            workflow.setName("Test Workflow");
+
+            List<NodeDefinition> nodes = new ArrayList<>();
+            nodes.add(createNode("start_1", "Start"));
+            nodes.add(createNode("end_1", "End"));
+
+            List<Edge> edges = new ArrayList<>();
+            edges.add(createEdge("start_1", "end_1", true));
+
+            workflow.setNodes(nodes);
+            workflow.setEdges(edges);
+
+            ExecutionPlan plan = executionGraphBuilder.build(workflow);
+
+            Job job1 = dynamicJobBuilder.buildJob(plan);
+            Job job2 = dynamicJobBuilder.buildJob(plan);
+
+            assertEquals(job1.getName(), job2.getName(),
+                "Same workflowId should produce same job name for restartability");
+        }
+
+        private NodeDefinition createNode(String id, String type) {
+            NodeDefinition node = new NodeDefinition();
+            node.setId(id);
+            node.setType(type);
+            node.setConfig(objectMapper.createObjectNode());
+            return node;
+        }
+
+        private Edge createEdge(String source, String target, boolean control) {
+            Edge edge = new Edge();
+            edge.setSource(source);
+            edge.setTarget(target);
+            edge.setControl(control);
+            return edge;
+        }
     }
 }

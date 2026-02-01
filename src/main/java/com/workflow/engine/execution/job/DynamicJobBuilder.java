@@ -105,7 +105,7 @@ public class DynamicJobBuilder {
     }
 
     public Job buildJob(ExecutionPlan plan) {
-        return buildJob(plan, null);
+        return buildJob(plan, plan.workflowId());
     }
 
     public Job buildJob(ExecutionPlan plan, String workflowId) {
@@ -113,7 +113,8 @@ public class DynamicJobBuilder {
 
         ExecutionPlanValidator.validate(plan);
 
-        String jobName = determineJobName(workflowId);
+        String effectiveWorkflowId = workflowId != null ? workflowId : plan.workflowId();
+        String jobName = determineJobName(effectiveWorkflowId);
         logger.info("Building job '{}' with {} steps, {} entry points",
             jobName, plan.steps().size(), plan.entryStepIds().size());
 

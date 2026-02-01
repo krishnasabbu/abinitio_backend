@@ -120,11 +120,10 @@ public class ExecutionApiService {
     }
 
     private void launchWorkflowJob(ExecutionPlan plan, String executionId, String executionMode) throws Exception {
-        // Set API listener context in StepFactory
         stepFactory.setApiListenerContext(jdbcTemplate, executionId);
 
-        // Create job
-        Job job = dynamicJobBuilder.buildJob(plan);
+        String workflowId = plan.workflowId() != null ? plan.workflowId() : executionId;
+        Job job = dynamicJobBuilder.buildJob(plan, workflowId);
 
         // Add job execution listener
         if (job instanceof org.springframework.batch.core.job.SimpleJob simpleJob) {
