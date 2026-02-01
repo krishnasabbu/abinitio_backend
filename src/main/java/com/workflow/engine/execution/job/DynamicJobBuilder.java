@@ -15,7 +15,6 @@ import org.springframework.batch.core.Step;
 import org.springframework.batch.core.job.builder.FlowBuilder;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.job.flow.Flow;
-import org.springframework.batch.core.job.flow.FlowExecutionStatus;
 import org.springframework.batch.core.job.flow.support.SimpleFlow;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.repository.JobRepository;
@@ -160,16 +159,16 @@ public class DynamicJobBuilder {
 
             Flow mainFlow = buildMainFlow(ctx);
 
-            JobBuilder jobBuilder = new JobBuilder(jobName, jobRepository)
+            var flowJobBuilder = new JobBuilder(jobName, jobRepository)
                 .incrementer(new RunIdIncrementer())
                 .start(mainFlow)
                 .end();
 
             if (!restartable) {
-                jobBuilder.preventRestart();
+                flowJobBuilder.preventRestart();
             }
 
-            Job job = jobBuilder.build();
+            Job job = flowJobBuilder.build();
             logger.info("[GRAPH] Built job '{}' successfully", jobName);
             return job;
         } finally {

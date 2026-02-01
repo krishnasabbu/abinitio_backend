@@ -310,19 +310,23 @@ public class AdvancedFeaturesTest {
         }
 
         @Test
-        @DisplayName("Cannot restart mid-fork if join is excluded")
-        void testCannotRestartMidForkIfJoinExcluded() {
+        @DisplayName("Partial restart from branch proceeds without fork validation")
+        void testPartialRestartFromBranchDoesNotIncludeFork() {
             Map<String, StepNode> steps = new LinkedHashMap<>();
             steps.put("fork", createForkNode("fork", List.of("branch-a", "branch-b"), "join"));
             steps.put("branch-a", createNode("branch-a", List.of("join")));
-            steps.put("branch-b", createNode("branch-b", null));
+            steps.put("branch-b", createNode("branch-b", List.of("end")));
             steps.put("join", createNode("join", List.of("end")));
             steps.put("end", createNode("end", null));
 
             ExecutionPlan fullPlan = new ExecutionPlan(List.of("fork"), steps, "test");
 
-            assertThrows(GraphValidationException.class,
-                () -> restartManager.createPartialPlan(fullPlan, "branch-b"));
+            ExecutionPlan partialPlan = restartManager.createPartialPlan(fullPlan, "branch-b");
+
+            assertFalse(partialPlan.steps().containsKey("fork"));
+            assertTrue(partialPlan.steps().containsKey("branch-b"));
+            assertTrue(partialPlan.steps().containsKey("end"));
+            assertEquals(List.of("branch-b"), partialPlan.entryStepIds());
         }
 
         private StepNode createNode(String id, List<String> nextSteps) {
