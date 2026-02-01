@@ -81,7 +81,7 @@ public class WebServiceCallExecutor implements NodeExecutor<Map<String, Object>,
     }
 
     private String applyUrlParams(String url, Map<String, Object> item, JsonNode config) {
-        String result = url;
+        String[] resultHolder = { url };
 
         if (config.has("urlParams")) {
             JsonNode params = config.get("urlParams");
@@ -89,11 +89,11 @@ public class WebServiceCallExecutor implements NodeExecutor<Map<String, Object>,
                 String paramName = entry.getKey();
                 Object value = item.get(paramName);
                 String stringValue = value != null ? String.valueOf(value) : "";
-                result = result.replace(":" + paramName, stringValue);
+                resultHolder[0] = resultHolder[0].replace(":" + paramName, stringValue);
             });
         }
 
-        return result;
+        return resultHolder[0];
     }
 
     private void applyResponseMapping(Map<String, Object> item, Map<String, Object> response, JsonNode config) {
