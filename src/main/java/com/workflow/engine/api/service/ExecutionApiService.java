@@ -90,21 +90,22 @@ public class ExecutionApiService {
             // Get workflow ID if available
             String workflowId = workflow.getId() != null ? workflow.getId() : "workflow_" + UUID.randomUUID().toString().substring(0, 8);
 
-            // Create execution record in database
+            // Build execution plan FIRST to get total_nodes count
+            ExecutionPlan plan = executionGraphBuilder.build(workflow);
+            int totalNodes = plan.steps().size();
+
+            // Create execution record in database with total_nodes
             String recordId = UUID.randomUUID().toString();
-            String insertSql = "INSERT INTO workflow_executions (id, execution_id, workflow_id, workflow_name, status, start_time, execution_mode, parameters) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-            int rowsInserted = jdbcTemplate.update(insertSql, recordId, executionId, workflowId, workflowName, "running", startTime, executionMode, workflowPayload);
+            String insertSql = "INSERT INTO workflow_executions (id, execution_id, workflow_id, workflow_name, status, start_time, execution_mode, parameters, total_nodes) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            int rowsInserted = jdbcTemplate.update(insertSql, recordId, executionId, workflowId, workflowName, "running", startTime, executionMode, workflowPayload, totalNodes);
 
             if (rowsInserted == 0) {
                 logger.error("Failed to insert workflow_executions record for executionId: {}", executionId);
                 return buildErrorResponse("Failed to create execution record in database");
             }
 
-            logger.debug("Created workflow_executions record: id={}, execution_id={}, workflow_id={}", recordId, executionId, workflowId);
-
-            // Build execution plan
-            ExecutionPlan plan = executionGraphBuilder.build(workflow);
+            logger.debug("Created workflow_executions record: id={}, execution_id={}, workflow_id={}, total_nodes={}", recordId, executionId, workflowId, totalNodes);
 
             // Log execution trace summary
             logExecutionTraceSummary(executionId, workflowName, plan, executionMode);
@@ -340,10 +341,11 @@ public class ExecutionApiService {
             }
 
             String recordId = UUID.randomUUID().toString();
-            String insertSql = "INSERT INTO workflow_executions (id, execution_id, workflow_id, workflow_name, status, start_time, execution_mode, parameters) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+            int planSize = executionPlan.steps().size();
+            String insertSql = "INSERT INTO workflow_executions (id, execution_id, workflow_id, workflow_name, status, start_time, execution_mode, parameters, total_nodes) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
             jdbcTemplate.update(insertSql, recordId, newExecutionId, workflowId, workflowName, "running",
-                    System.currentTimeMillis(), executionMode, workflowPayload);
+                    System.currentTimeMillis(), executionMode, workflowPayload, planSize);
 
             launchWorkflowJob(executionPlan, newExecutionId, executionMode, workflowId);
 
@@ -351,7 +353,7 @@ public class ExecutionApiService {
                     "new_execution_id", newExecutionId,
                     "status", "running",
                     "message", message,
-                    "total_nodes", executionPlan.steps().size()
+                    "total_nodes", planSize
             );
 
         } catch (Exception e) {
@@ -390,10 +392,11 @@ public class ExecutionApiService {
             String executionMode = "parallel";
 
             String recordId = UUID.randomUUID().toString();
-            String insertSql = "INSERT INTO workflow_executions (id, execution_id, workflow_id, workflow_name, status, start_time, execution_mode, parameters) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+            int planSize = restartPlan.steps().size();
+            String insertSql = "INSERT INTO workflow_executions (id, execution_id, workflow_id, workflow_name, status, start_time, execution_mode, parameters, total_nodes) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
             jdbcTemplate.update(insertSql, recordId, newExecutionId, workflowId, workflowName, "running",
-                    System.currentTimeMillis(), executionMode, workflowPayload);
+                    System.currentTimeMillis(), executionMode, workflowPayload, planSize);
 
             launchWorkflowJob(restartPlan, newExecutionId, executionMode, workflowId);
 
@@ -405,7 +408,7 @@ public class ExecutionApiService {
                     "original_execution_id", executionId,
                     "status", "running",
                     "message", "Restart from failed nodes started",
-                    "total_nodes", restartPlan.steps().size()
+                    "total_nodes", planSize
             );
 
         } catch (Exception e) {

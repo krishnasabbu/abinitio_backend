@@ -67,9 +67,6 @@ public class PersistenceJobListener implements JobExecutionListener {
 
     private void calculateAndUpdateTotals(JobExecution jobExecution) {
         try {
-            String countSql = "SELECT COUNT(*) FROM node_executions WHERE execution_id = ?";
-            Integer totalNodes = jdbcTemplate.queryForObject(countSql, Integer.class, executionId);
-
             String successSql = "SELECT COUNT(*) FROM node_executions WHERE execution_id = ? AND status = 'success'";
             Integer successfulNodes = jdbcTemplate.queryForObject(successSql, Integer.class, executionId);
 
@@ -84,18 +81,20 @@ public class PersistenceJobListener implements JobExecutionListener {
             String sumTimeSql = "SELECT COALESCE(SUM(execution_time_ms), 0) FROM node_executions WHERE execution_id = ?";
             Long totalTime = jdbcTemplate.queryForObject(sumTimeSql, Long.class, executionId);
 
-            String updateTotalsSql = "UPDATE workflow_executions SET total_nodes = ?, completed_nodes = ?, " +
+            String updateTotalsSql = "UPDATE workflow_executions SET completed_nodes = ?, " +
                     "successful_nodes = ?, failed_nodes = ?, total_records = ?, total_execution_time_ms = ? " +
                     "WHERE execution_id = ?";
 
-            jdbcTemplate.update(updateTotalsSql,
-                    totalNodes != null ? totalNodes : 0,
+            int updated = jdbcTemplate.update(updateTotalsSql,
                     completedNodes,
                     successfulNodes != null ? successfulNodes : 0,
                     failedNodes != null ? failedNodes : 0,
                     totalRecords != null ? totalRecords : 0,
                     totalTime != null ? totalTime : 0,
                     executionId);
+
+            logger.info("Updated execution metrics for {}: completed={}, successful={}, failed={}, records={}, time={}ms",
+                    executionId, completedNodes, successfulNodes, failedNodes, totalRecords, totalTime);
         } catch (Exception e) {
             logger.error("Error calculating totals for execution {}", executionId, e);
         }
