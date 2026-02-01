@@ -11,6 +11,8 @@ import org.springframework.batch.core.launch.support.TaskExecutorJobLauncher;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+
 /**
  * Core service for executing workflow definitions.
  *
@@ -147,8 +149,14 @@ public class WorkflowExecutionService {
                 stepExecution.getRollbackCount());
 
             if (stepExecution.getStartTime() != null && stepExecution.getEndTime() != null) {
-                long duration = stepExecution.getEndTime().getTime() - stepExecution.getStartTime().getTime();
-                log.debug("workflowId={}, Step: {} Duration: {}ms", workflowId, stepExecution.getStepName(), duration);
+                if (stepExecution.getStartTime() != null && stepExecution.getEndTime() != null) {
+                    long durationMillis = Duration.between(
+                            stepExecution.getStartTime(),
+                            stepExecution.getEndTime()
+                    ).toMillis();
+                    log.debug("workflowId={}, Step: {} Duration: {}ms", workflowId, stepExecution.getStepName(), durationMillis);
+                }
+
             }
             if (stepExecution.getFailureExceptions() != null && !stepExecution.getFailureExceptions().isEmpty()) {
                 log.error("workflowId={}, Step: {} Failures: {}", workflowId, stepExecution.getStepName(), stepExecution.getFailureExceptions());

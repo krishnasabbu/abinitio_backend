@@ -380,7 +380,7 @@ public class ExecutionApiService {
                 String insertLogSql = "INSERT INTO execution_logs (timestamp, datetime, level, execution_id, message) " +
                         "VALUES (?, ?, ?, ?, ?)";
                 long timestamp = System.currentTimeMillis();
-                String datetime = new java.time.Instant.ofEpochMilli(timestamp).toString();
+                String datetime = java.time.Instant.ofEpochMilli(timestamp).toString();
                 jdbcTemplate.update(insertLogSql, timestamp, datetime, "INFO", executionId, "Execution cancellation requested");
 
                 return Map.of("status", "cancel_requested", "message", "Execution cancellation requested");
