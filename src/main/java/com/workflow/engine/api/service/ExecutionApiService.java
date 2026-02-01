@@ -94,7 +94,14 @@ public class ExecutionApiService {
             String recordId = UUID.randomUUID().toString();
             String insertSql = "INSERT INTO workflow_executions (id, execution_id, workflow_id, workflow_name, status, start_time, execution_mode, parameters) " +
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-            jdbcTemplate.update(insertSql, recordId, executionId, workflowId, workflowName, "running", startTime, executionMode, workflowPayload);
+            int rowsInserted = jdbcTemplate.update(insertSql, recordId, executionId, workflowId, workflowName, "running", startTime, executionMode, workflowPayload);
+
+            if (rowsInserted == 0) {
+                logger.error("Failed to insert workflow_executions record for executionId: {}", executionId);
+                return buildErrorResponse("Failed to create execution record in database");
+            }
+
+            logger.debug("Created workflow_executions record: id={}, execution_id={}, workflow_id={}", recordId, executionId, workflowId);
 
             // Build execution plan
             ExecutionPlan plan = executionGraphBuilder.build(workflow);
@@ -189,38 +196,66 @@ public class ExecutionApiService {
     }
 
     public List<NodeExecutionDto> getNodeExecutions(String executionId) {
-        String sql = "SELECT id, execution_id, node_id, node_label, node_type, status, start_time, end_time, execution_time_ms, records_processed, retry_count, error_message FROM node_executions WHERE execution_id = ?";
-        return jdbcTemplate.query(sql, new Object[]{executionId}, (rs, rowNum) -> {
-            NodeExecutionDto dto = new NodeExecutionDto();
-            dto.setId(rs.getString("id"));
-            dto.setExecutionId(rs.getString("execution_id"));
-            dto.setNodeId(rs.getString("node_id"));
-            dto.setNodeLabel(rs.getString("node_label"));
-            dto.setNodeType(rs.getString("node_type"));
-            dto.setStatus(rs.getString("status"));
-            dto.setStartTime(rs.getLong("start_time"));
-            dto.setEndTime(rs.getLong("end_time"));
-            dto.setExecutionTimeMs(rs.getLong("execution_time_ms"));
-            dto.setRecordsProcessed(rs.getLong("records_processed"));
-            dto.setRetryCount(rs.getInt("retry_count"));
-            dto.setErrorMessage(rs.getString("error_message"));
-            return dto;
-        });
+        try {
+            String sql = "SELECT id, execution_id, node_id, node_label, node_type, status, start_time, end_time, execution_time_ms, records_processed, retry_count, error_message FROM node_executions WHERE execution_id = ? ORDER BY start_time ASC";
+            List<NodeExecutionDto> result = jdbcTemplate.query(sql, new Object[]{executionId}, (rs, rowNum) -> {
+                NodeExecutionDto dto = new NodeExecutionDto();
+                dto.setId(rs.getString("id"));
+                dto.setExecutionId(rs.getString("execution_id"));
+                dto.setNodeId(rs.getString("node_id"));
+                dto.setNodeLabel(rs.getString("node_label"));
+                dto.setNodeType(rs.getString("node_type"));
+                dto.setStatus(rs.getString("status"));
+                dto.setStartTime(rs.getLong("start_time"));
+                dto.setEndTime(rs.getLong("end_time"));
+                dto.setExecutionTimeMs(rs.getLong("execution_time_ms"));
+                dto.setRecordsProcessed(rs.getLong("records_processed"));
+                dto.setRetryCount(rs.getInt("retry_count"));
+                dto.setErrorMessage(rs.getString("error_message"));
+                return dto;
+            });
+
+            logger.debug("Retrieved {} node executions for executionId: {}", result.size(), executionId);
+            return result;
+        } catch (Exception e) {
+            logger.error("Error retrieving node executions for executionId: {}", executionId, e);
+            return new ArrayList<>();
+        }
     }
 
     public Map<String, Object> getExecutionTimeline(String executionId) {
-        List<NodeExecutionDto> nodes = getNodeExecutions(executionId);
-        List<Map<String, Object>> timeline = new ArrayList<>();
-        for (NodeExecutionDto node : nodes) {
-            timeline.add(Map.of(
-                    "node_id", node.getNodeId(),
-                    "node_label", node.getNodeLabel() != null ? node.getNodeLabel() : "",
-                    "start_time", node.getStartTime() != null ? node.getStartTime() : 0,
-                    "end_time", node.getEndTime() != null ? node.getEndTime() : 0,
-                    "duration_ms", node.getExecutionTimeMs() != null ? node.getExecutionTimeMs() : 0
-            ));
+        try {
+            List<NodeExecutionDto> nodes = getNodeExecutions(executionId);
+            List<Map<String, Object>> timeline = new ArrayList<>();
+
+            if (nodes == null || nodes.isEmpty()) {
+                logger.debug("No node executions found for executionId: {}", executionId);
+                return Map.of(
+                        "timeline", timeline,
+                        "execution_id", executionId,
+                        "status", "running",
+                        "message", "Execution is still running or no nodes have started yet"
+                );
+            }
+
+            for (NodeExecutionDto node : nodes) {
+                timeline.add(Map.of(
+                        "node_id", node.getNodeId(),
+                        "node_label", node.getNodeLabel() != null ? node.getNodeLabel() : "",
+                        "start_time", node.getStartTime() != null ? node.getStartTime() : 0,
+                        "end_time", node.getEndTime() != null ? node.getEndTime() : 0,
+                        "duration_ms", node.getExecutionTimeMs() != null ? node.getExecutionTimeMs() : 0
+                ));
+            }
+            return Map.of("timeline", timeline);
+        } catch (Exception e) {
+            logger.error("Error retrieving execution timeline for executionId: {}", executionId, e);
+            return Map.of(
+                    "timeline", new ArrayList<>(),
+                    "execution_id", executionId,
+                    "error", e.getMessage()
+            );
         }
-        return Map.of("timeline", timeline);
     }
 
     public Map<String, Object> getExecutionMetrics(String executionId) {

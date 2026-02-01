@@ -91,52 +91,76 @@ public class AnalyticsApiService {
     }
 
     public Map<String, Object> getExecutionHealth(String executionId) {
-        String sql = "SELECT status, total_nodes, successful_nodes, failed_nodes, " +
-                "total_execution_time_ms FROM workflow_executions WHERE execution_id = ?";
+        try {
+            String sql = "SELECT status, total_nodes, successful_nodes, failed_nodes, " +
+                    "total_execution_time_ms FROM workflow_executions WHERE execution_id = ?";
 
-        List<Map<String, Object>> result = jdbcTemplate.queryForList(sql, executionId);
-        if (result.isEmpty()) {
-            return Map.of("status", "not_found");
+            List<Map<String, Object>> result = jdbcTemplate.queryForList(sql, executionId);
+            if (result.isEmpty()) {
+                return Map.of(
+                        "status", "not_found",
+                        "execution_id", executionId,
+                        "message", "Execution not found or still initializing"
+                );
+            }
+
+            Map<String, Object> exec = result.get(0);
+            Integer totalNodes = ((Number) exec.getOrDefault("total_nodes", 0)).intValue();
+            Integer successfulNodes = ((Number) exec.getOrDefault("successful_nodes", 0)).intValue();
+            Integer failedNodes = ((Number) exec.getOrDefault("failed_nodes", 0)).intValue();
+
+            double healthScore = totalNodes > 0 ? (successfulNodes * 100.0 / totalNodes) : 0;
+
+            return Map.of(
+                    "execution_id", executionId,
+                    "status", exec.get("status") != null ? exec.get("status") : "running",
+                    "health_score", healthScore,
+                    "total_nodes", totalNodes,
+                    "successful_nodes", successfulNodes,
+                    "failed_nodes", failedNodes
+            );
+        } catch (Exception e) {
+            return Map.of(
+                    "status", "error",
+                    "execution_id", executionId,
+                    "message", e.getMessage()
+            );
         }
-
-        Map<String, Object> exec = result.get(0);
-        Integer totalNodes = ((Number) exec.getOrDefault("total_nodes", 0)).intValue();
-        Integer successfulNodes = ((Number) exec.getOrDefault("successful_nodes", 0)).intValue();
-        Integer failedNodes = ((Number) exec.getOrDefault("failed_nodes", 0)).intValue();
-
-        double healthScore = totalNodes > 0 ? (successfulNodes * 100.0 / totalNodes) : 0;
-
-        return Map.of(
-                "execution_id", executionId,
-                "status", exec.get("status"),
-                "health_score", healthScore,
-                "total_nodes", totalNodes,
-                "successful_nodes", successfulNodes,
-                "failed_nodes", failedNodes
-        );
     }
 
     public Map<String, Object> getExecutionPerformance(String executionId) {
-        String sql = "SELECT total_execution_time_ms, total_records, total_nodes FROM workflow_executions WHERE execution_id = ?";
-        List<Map<String, Object>> result = jdbcTemplate.queryForList(sql, executionId);
+        try {
+            String sql = "SELECT total_execution_time_ms, total_records, total_nodes FROM workflow_executions WHERE execution_id = ?";
+            List<Map<String, Object>> result = jdbcTemplate.queryForList(sql, executionId);
 
-        if (result.isEmpty()) {
-            return Map.of("status", "not_found");
+            if (result.isEmpty()) {
+                return Map.of(
+                        "status", "not_found",
+                        "execution_id", executionId,
+                        "message", "Execution not found or still initializing"
+                );
+            }
+
+            Map<String, Object> exec = result.get(0);
+            Long duration = ((Number) exec.getOrDefault("total_execution_time_ms", 0)).longValue();
+            Long records = ((Number) exec.getOrDefault("total_records", 0)).longValue();
+
+            double throughput = duration > 0 ? (records * 1000.0 / duration) : 0;
+
+            return Map.of(
+                    "execution_id", executionId,
+                    "total_duration_ms", duration,
+                    "total_records_processed", records,
+                    "throughput_records_per_sec", throughput,
+                    "total_nodes", exec.get("total_nodes") != null ? exec.get("total_nodes") : 0
+            );
+        } catch (Exception e) {
+            return Map.of(
+                    "status", "error",
+                    "execution_id", executionId,
+                    "message", e.getMessage()
+            );
         }
-
-        Map<String, Object> exec = result.get(0);
-        Long duration = ((Number) exec.getOrDefault("total_execution_time_ms", 0)).longValue();
-        Long records = ((Number) exec.getOrDefault("total_records", 0)).longValue();
-
-        double throughput = duration > 0 ? (records * 1000.0 / duration) : 0;
-
-        return Map.of(
-                "execution_id", executionId,
-                "total_duration_ms", duration,
-                "total_records_processed", records,
-                "throughput_records_per_sec", throughput,
-                "total_nodes", exec.get("total_nodes")
-        );
     }
 
     public Map<String, Object> getSystemOverviewAnalytics() {
