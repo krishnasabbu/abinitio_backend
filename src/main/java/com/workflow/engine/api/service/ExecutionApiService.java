@@ -13,6 +13,7 @@ import com.workflow.engine.graph.ExecutionGraphBuilder;
 import com.workflow.engine.graph.ExecutionPlan;
 import com.workflow.engine.graph.StepNode;
 import com.workflow.engine.model.WorkflowDefinition;
+import com.workflow.engine.service.PartialRestartManager;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.JobParametersBuilder;
@@ -54,6 +55,9 @@ public class ExecutionApiService {
 
     @Autowired
     private StepFactory stepFactory;
+
+    @Autowired
+    private PartialRestartManager partialRestartManager;
 
     private ObjectMapper objectMapper = new ObjectMapper();
 
@@ -263,7 +267,6 @@ public class ExecutionApiService {
         }
 
         try {
-            // Get workflow payload from original execution
             String payloadSql = "SELECT parameters FROM workflow_executions WHERE execution_id = ?";
             String workflowPayload = jdbcTemplate.queryForObject(payloadSql, String.class, executionId);
 
@@ -271,35 +274,99 @@ public class ExecutionApiService {
                 return buildErrorResponse("Workflow payload not found");
             }
 
-            // Create new execution record
-            String insertSql = "INSERT INTO workflow_executions (id, execution_id, workflow_name, status, start_time, execution_mode, parameters) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)";
             String executionMode = "parallel";
-            jdbcTemplate.update(insertSql, newExecutionId, newExecutionId, original.getWorkflowName(), "running",
-                    System.currentTimeMillis(), executionMode, workflowPayload);
+            String workflowName = original.getWorkflowName();
 
-            // Parse and execute workflow
             @SuppressWarnings("unchecked")
             Map<String, Object> workflowData = objectMapper.readValue(workflowPayload, Map.class);
             WorkflowDefinition workflow = objectMapper.convertValue(workflowData, WorkflowDefinition.class);
 
+            ExecutionPlan fullPlan = executionGraphBuilder.build(workflow);
+            ExecutionPlan executionPlan;
+            String message;
+
             if (fromNodeId != null && !fromNodeId.isEmpty()) {
-                // Partial rerun from node - not yet implemented
-                logger.info("Partial rerun from node {} not yet supported, running full workflow", fromNodeId);
+                if (!fullPlan.steps().containsKey(fromNodeId)) {
+                    return buildErrorResponse("Node '" + fromNodeId + "' not found in workflow");
+                }
+
+                executionPlan = partialRestartManager.createPartialPlan(fullPlan, fromNodeId);
+                workflowName = workflowName + " (restart from " + fromNodeId + ")";
+                message = "Partial restart from node '" + fromNodeId + "' started";
+                logger.info("Starting partial rerun from node '{}' with {} steps", fromNodeId, executionPlan.steps().size());
+            } else {
+                executionPlan = fullPlan;
+                message = "Full rerun started";
             }
 
-            ExecutionPlan plan = executionGraphBuilder.build(workflow);
-            launchWorkflowJob(plan, newExecutionId, executionMode);
+            String insertSql = "INSERT INTO workflow_executions (id, execution_id, workflow_name, status, start_time, execution_mode, parameters) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)";
+            jdbcTemplate.update(insertSql, newExecutionId, newExecutionId, workflowName, "running",
+                    System.currentTimeMillis(), executionMode, workflowPayload);
+
+            launchWorkflowJob(executionPlan, newExecutionId, executionMode);
 
             return Map.of(
                     "new_execution_id", newExecutionId,
                     "status", "running",
-                    "message", fromNodeId != null ? "Full rerun started (partial rerun not yet supported)" : "Execution rerun started"
+                    "message", message,
+                    "total_nodes", executionPlan.steps().size()
             );
 
         } catch (Exception e) {
             logger.error("Error rerunning execution {}", executionId, e);
             return buildErrorResponse("Failed to rerun execution: " + e.getMessage());
+        }
+    }
+
+    public Map<String, Object> rerunFromFailed(String executionId) {
+        WorkflowExecutionDto original = getExecutionById(executionId);
+
+        if (original == null) {
+            return buildErrorResponse("Original execution not found");
+        }
+
+        try {
+            String payloadSql = "SELECT parameters FROM workflow_executions WHERE execution_id = ?";
+            String workflowPayload = jdbcTemplate.queryForObject(payloadSql, String.class, executionId);
+
+            if (workflowPayload == null || workflowPayload.isEmpty()) {
+                return buildErrorResponse("Workflow payload not found");
+            }
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> workflowData = objectMapper.readValue(workflowPayload, Map.class);
+            WorkflowDefinition workflow = objectMapper.convertValue(workflowData, WorkflowDefinition.class);
+
+            ExecutionPlan fullPlan = executionGraphBuilder.build(workflow);
+            ExecutionPlan restartPlan = partialRestartManager.createPartialPlanFromFailedNodes(
+                fullPlan, jdbcTemplate, executionId);
+
+            String newExecutionId = "exec_" + UUID.randomUUID().toString().substring(0, 8);
+            String workflowName = original.getWorkflowName() + " (restart from failed)";
+            String executionMode = "parallel";
+
+            String insertSql = "INSERT INTO workflow_executions (id, execution_id, workflow_name, status, start_time, execution_mode, parameters) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)";
+            jdbcTemplate.update(insertSql, newExecutionId, newExecutionId, workflowName, "running",
+                    System.currentTimeMillis(), executionMode, workflowPayload);
+
+            launchWorkflowJob(restartPlan, newExecutionId, executionMode);
+
+            logger.info("Started restart from failed nodes for execution '{}', new execution '{}'",
+                executionId, newExecutionId);
+
+            return Map.of(
+                    "new_execution_id", newExecutionId,
+                    "original_execution_id", executionId,
+                    "status", "running",
+                    "message", "Restart from failed nodes started",
+                    "total_nodes", restartPlan.steps().size()
+            );
+
+        } catch (Exception e) {
+            logger.error("Error rerunning from failed for execution {}", executionId, e);
+            return buildErrorResponse("Failed to restart from failed: " + e.getMessage());
         }
     }
 

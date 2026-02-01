@@ -75,6 +75,12 @@ public class ExecutionApiController {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(result);
     }
 
+    @PostMapping("/executions/{executionId}/rerun-from-failed")
+    public ResponseEntity<Map<String, Object>> rerunFromFailed(@PathVariable String executionId) {
+        Map<String, Object> result = executionApiService.rerunFromFailed(executionId);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(result);
+    }
+
     @PostMapping("/executions/{executionId}/cancel")
     public ResponseEntity<Map<String, Object>> cancelExecution(@PathVariable String executionId) {
         Map<String, Object> result = executionApiService.cancelExecution(executionId);

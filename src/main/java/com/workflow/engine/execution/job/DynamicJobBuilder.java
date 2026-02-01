@@ -1,9 +1,11 @@
 package com.workflow.engine.execution.job;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.workflow.engine.graph.ExecutionPlan;
 import com.workflow.engine.graph.ExecutionPlanValidator;
 import com.workflow.engine.graph.StepKind;
 import com.workflow.engine.graph.StepNode;
+import com.workflow.engine.graph.SubgraphExpander;
 import com.workflow.engine.model.ExecutionMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +15,7 @@ import org.springframework.batch.core.Step;
 import org.springframework.batch.core.job.builder.FlowBuilder;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.job.flow.Flow;
+import org.springframework.batch.core.job.flow.FlowExecutionStatus;
 import org.springframework.batch.core.job.flow.support.SimpleFlow;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.repository.JobRepository;
@@ -73,6 +76,7 @@ public class DynamicJobBuilder {
     private final PlatformTransactionManager transactionManager;
     private final TaskExecutor workflowTaskExecutor;
     private final ExecutionPlanValidator.ValidationConfig validationConfig;
+    private final SubgraphExpander subgraphExpander;
 
     @Value("${workflow.job.restartable:true}")
     private boolean restartable;
@@ -86,7 +90,8 @@ public class DynamicJobBuilder {
             JobRepository jobRepository,
             PlatformTransactionManager transactionManager,
             @Qualifier("workflowTaskExecutor") @Autowired(required = false) TaskExecutor workflowTaskExecutor,
-            @Autowired(required = false) ExecutionPlanValidator.ValidationConfig validationConfig) {
+            @Autowired(required = false) ExecutionPlanValidator.ValidationConfig validationConfig,
+            @Autowired(required = false) SubgraphExpander subgraphExpander) {
         this.stepFactory = stepFactory;
         this.jobRepository = jobRepository;
         this.transactionManager = transactionManager;
@@ -96,6 +101,9 @@ public class DynamicJobBuilder {
         this.validationConfig = validationConfig != null
             ? validationConfig
             : ExecutionPlanValidator.ValidationConfig.defaults();
+        this.subgraphExpander = subgraphExpander != null
+            ? subgraphExpander
+            : new SubgraphExpander();
     }
 
     private TaskExecutor createDefaultTaskExecutor() {
@@ -110,6 +118,18 @@ public class DynamicJobBuilder {
         return executor;
     }
 
+    private ExecutionPlan expandSubgraphsIfNeeded(ExecutionPlan plan) {
+        boolean hasSubgraphs = plan.steps().values().stream()
+            .anyMatch(n -> n.kind() == StepKind.SUBGRAPH);
+
+        if (!hasSubgraphs) {
+            return plan;
+        }
+
+        logger.info("[SUBGRAPH] Expanding subgraphs in plan...");
+        return subgraphExpander.expand(plan);
+    }
+
     public Job buildJob(ExecutionPlan plan) {
         return buildJob(plan, plan.workflowId());
     }
@@ -117,9 +137,11 @@ public class DynamicJobBuilder {
     public Job buildJob(ExecutionPlan plan, String workflowId) {
         Objects.requireNonNull(plan, "ExecutionPlan cannot be null");
 
-        ExecutionPlanValidator.validate(plan, validationConfig);
+        ExecutionPlan expandedPlan = expandSubgraphsIfNeeded(plan);
 
-        String effectiveWorkflowId = workflowId != null ? workflowId : plan.workflowId();
+        ExecutionPlanValidator.validate(expandedPlan, validationConfig);
+
+        String effectiveWorkflowId = workflowId != null ? workflowId : expandedPlan.workflowId();
         String jobName = determineJobName(effectiveWorkflowId);
 
         MDC.put("workflowId", effectiveWorkflowId);
@@ -127,11 +149,11 @@ public class DynamicJobBuilder {
 
         try {
             logger.info("[GRAPH] Building job '{}' with {} steps, {} entry points",
-                jobName, plan.steps().size(), plan.entryStepIds().size());
+                jobName, expandedPlan.steps().size(), expandedPlan.entryStepIds().size());
 
-            logGraphStructure(plan);
+            logGraphStructure(expandedPlan);
 
-            BuildContext ctx = new BuildContext(plan, jobName);
+            BuildContext ctx = new BuildContext(expandedPlan, jobName);
 
             validateForkJoinStructure(ctx);
             buildAllSteps(ctx);
@@ -379,13 +401,11 @@ public class DynamicJobBuilder {
         try {
             Flow flow;
             if (node.isSubgraph()) {
-                throw new UnsupportedOperationException(String.format(
-                    "SUBGRAPH node '%s' is not yet supported. " +
-                    "Subgraph expansion requires explicit implementation.", nodeId));
+                throw new IllegalStateException(String.format(
+                    "SUBGRAPH node '%s' should have been expanded at compile time. " +
+                    "This indicates a bug in SubgraphExpander.", nodeId));
             } else if (node.isDecision()) {
-                throw new UnsupportedOperationException(String.format(
-                    "DECISION node '%s' is not yet supported. " +
-                    "Decision routing requires JobExecutionDecider implementation.", nodeId));
+                flow = buildDecisionFlow(node, ctx);
             } else if (node.isJoin()) {
                 flow = buildJoinFlow(node, ctx);
             } else if (node.isFork()) {
@@ -570,6 +590,102 @@ public class DynamicJobBuilder {
         wireNextSteps(flowBuilder, joinNode, ctx);
 
         return flowBuilder.build();
+    }
+
+    private Flow buildDecisionFlow(StepNode decisionNode, BuildContext ctx) {
+        logger.info("[DECISION] Building decision flow for node '{}'", decisionNode.nodeId());
+
+        Step decisionStep = ctx.stepMap.get(decisionNode.nodeId());
+        WorkflowDecisionDecider decider = WorkflowDecisionDecider.fromStepNode(decisionNode);
+
+        FlowBuilder<SimpleFlow> flowBuilder = new FlowBuilder<>(decisionNode.nodeId() + "-decision-flow");
+        flowBuilder.start(decisionStep);
+
+        wireErrorRouting(flowBuilder, decisionNode, ctx);
+
+        List<String> branches = decisionNode.nextSteps();
+        if (branches == null || branches.isEmpty()) {
+            flowBuilder.on("*").end();
+            return flowBuilder.build();
+        }
+
+        Map<String, String> branchTargets = parseBranchTargets(decisionNode);
+
+        flowBuilder.next(decider);
+
+        for (Map.Entry<String, String> entry : branchTargets.entrySet()) {
+            String branchName = entry.getKey();
+            String targetNodeId = entry.getValue();
+
+            if (ctx.plan.steps().containsKey(targetNodeId)) {
+                Flow branchFlow = buildFlowFromNode(targetNodeId, ctx, FlowMode.NORMAL);
+                flowBuilder.on(branchName).to(branchFlow);
+                logger.debug("[DECISION] Wired branch '{}' -> node '{}'", branchName, targetNodeId);
+            } else {
+                logger.warn("[DECISION] Branch '{}' target '{}' not found in plan", branchName, targetNodeId);
+            }
+        }
+
+        if (branches.size() == 1) {
+            Flow defaultFlow = buildFlowFromNode(branches.get(0), ctx, FlowMode.NORMAL);
+            flowBuilder.on("*").to(defaultFlow);
+        } else {
+            String defaultTarget = getDefaultBranchTarget(decisionNode, branches);
+            if (defaultTarget != null && ctx.plan.steps().containsKey(defaultTarget)) {
+                Flow defaultFlow = buildFlowFromNode(defaultTarget, ctx, FlowMode.NORMAL);
+                flowBuilder.on("*").to(defaultFlow);
+            } else {
+                flowBuilder.on("*").end();
+            }
+        }
+
+        return flowBuilder.build();
+    }
+
+    private Map<String, String> parseBranchTargets(StepNode decisionNode) {
+        Map<String, String> targets = new LinkedHashMap<>();
+
+        JsonNode config = decisionNode.config();
+        if (config != null && config.has("branches") && config.get("branches").isArray()) {
+            for (JsonNode branchNode : config.get("branches")) {
+                String name = branchNode.has("name") ? branchNode.get("name").asText() : null;
+                String target = branchNode.has("target") ? branchNode.get("target").asText() : null;
+
+                if (name != null && target != null) {
+                    targets.put(name, target);
+                }
+            }
+        }
+
+        List<String> nextSteps = decisionNode.nextSteps();
+        if (nextSteps != null) {
+            for (int i = 0; i < nextSteps.size(); i++) {
+                String branchName = "branch_" + i;
+                if (!targets.containsValue(nextSteps.get(i))) {
+                    targets.put(branchName, nextSteps.get(i));
+                }
+            }
+        }
+
+        return targets;
+    }
+
+    private String getDefaultBranchTarget(StepNode decisionNode, List<String> branches) {
+        JsonNode config = decisionNode.config();
+
+        if (config != null && config.has("defaultBranch")) {
+            String defaultBranch = config.get("defaultBranch").asText();
+            if (branches.contains(defaultBranch)) {
+                return defaultBranch;
+            }
+            for (String branch : branches) {
+                if (branch.endsWith(defaultBranch) || defaultBranch.endsWith(branch)) {
+                    return branch;
+                }
+            }
+        }
+
+        return branches.isEmpty() ? null : branches.get(branches.size() - 1);
     }
 
     private void wireErrorRouting(FlowBuilder<SimpleFlow> flowBuilder, StepNode node, BuildContext ctx) {
