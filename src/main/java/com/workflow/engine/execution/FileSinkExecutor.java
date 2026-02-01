@@ -3,6 +3,7 @@ package com.workflow.engine.execution;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
+import com.workflow.engine.execution.routing.BufferedItemReader;
 import org.springframework.batch.item.ExecutionContext;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
@@ -37,29 +38,21 @@ public class FileSinkExecutor implements NodeExecutor<Map<String, Object>, Map<S
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
-        List<Map<String, Object>> items = new ArrayList<>();
-
         if (context instanceof RoutingNodeExecutionContext) {
             RoutingNodeExecutionContext routingContext = (RoutingNodeExecutionContext) context;
             String executionId = routingContext.getRoutingContext().getExecutionId();
             String nodeId = context.getNodeDefinition().getId();
 
-            List<Map<String, Object>> bufferItems = routingContext.getRoutingContext()
-                .getBufferStore().getRecords(executionId, nodeId, "in");
-
-            if (bufferItems != null && !bufferItems.isEmpty()) {
-                items.addAll(bufferItems);
-                logger.debug("FileSink reader read {} items from buffer for node {}", items.size(), nodeId);
-                routingContext.getRoutingContext().getBufferStore().clearBuffer(executionId, nodeId, "in");
-            }
+            logger.debug("Using BufferedItemReader for FileSink node {}", nodeId);
+            return new BufferedItemReader(executionId, nodeId, "in", routingContext.getRoutingContext().getBufferStore());
         } else {
+            List<Map<String, Object>> items = new ArrayList<>();
             List<Map<String, Object>> contextItems = (List<Map<String, Object>>) context.getVariable("outputItems");
             if (contextItems != null) {
                 items.addAll(contextItems);
             }
+            return new ListItemReader<>(items);
         }
-
-        return new ListItemReader<>(items);
     }
 
     @Override

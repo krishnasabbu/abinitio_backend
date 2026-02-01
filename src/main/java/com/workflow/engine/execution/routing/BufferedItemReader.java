@@ -23,12 +23,16 @@ public class BufferedItemReader implements ItemReader<Map<String, Object>> {
         this.targetNodeId = targetNodeId;
         this.targetPort = targetPort != null ? targetPort : "in";
         this.bufferStore = bufferStore;
-        this.cachedRecords = bufferStore.getRecords(executionId, targetNodeId, this.targetPort);
     }
 
     @Override
     public Map<String, Object> read() {
-        if (cachedRecords == null || cachedRecords.isEmpty()) {
+        if (cachedRecords == null) {
+            cachedRecords = bufferStore.getRecords(executionId, targetNodeId, targetPort);
+            logger.debug("BufferedItemReader fetched {} records for {}", cachedRecords.size(), targetNodeId);
+        }
+
+        if (cachedRecords.isEmpty()) {
             return null;
         }
 

@@ -2,6 +2,7 @@ package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
+import com.workflow.engine.execution.routing.BufferedItemReader;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
@@ -51,24 +52,16 @@ public class FilterExecutor implements NodeExecutor<Map<String, Object>, Map<Str
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
         logger.debug("Creating filter reader");
-        List<Map<String, Object>> items = new ArrayList<>();
 
         if (context instanceof RoutingNodeExecutionContext) {
             RoutingNodeExecutionContext routingContext = (RoutingNodeExecutionContext) context;
             String executionId = routingContext.getRoutingContext().getExecutionId();
             String nodeId = context.getNodeDefinition().getId();
 
-            List<Map<String, Object>> bufferItems = routingContext.getRoutingContext()
-                .getBufferStore().getRecords(executionId, nodeId, "in");
-
-            if (bufferItems != null && !bufferItems.isEmpty()) {
-                items.addAll(bufferItems);
-                logger.debug("Filter reader read {} items from buffer for node {}", items.size(), nodeId);
-                routingContext.getRoutingContext().getBufferStore().clearBuffer(executionId, nodeId, "in");
-            } else {
-                logger.debug("No items found in buffer for node {}", nodeId);
-            }
+            logger.debug("Using BufferedItemReader for node {}", nodeId);
+            return new BufferedItemReader(executionId, nodeId, "in", routingContext.getRoutingContext().getBufferStore());
         } else {
+            List<Map<String, Object>> items = new ArrayList<>();
             List<Map<String, Object>> contextItems = (List<Map<String, Object>>) context.getVariable("outputItems");
             if (contextItems != null) {
                 items.addAll(contextItems);
@@ -76,9 +69,8 @@ public class FilterExecutor implements NodeExecutor<Map<String, Object>, Map<Str
             } else {
                 logger.debug("No outputItems variable found, using empty list");
             }
+            return new ListItemReader<>(items);
         }
-
-        return new ListItemReader<>(items);
     }
 
     @Override
