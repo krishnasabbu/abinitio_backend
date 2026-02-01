@@ -1,0 +1,58 @@
+spring:
+  application:
+    name: dag-execution-engine
+  batch:
+    job:
+      enabled: false
+    jdbc:
+      initialize-schema: always
+  datasource:
+    url: jdbc:h2:file:./data/batch-meta;AUTO_SERVER=TRUE
+    driverClassName: org.h2.Driver
+    username: sa
+    password: ''
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+server:
+  port: 8999
+
+logging:
+  level:
+    org.springframework.batch: INFO
+    com.workflow.engine: DEBUG
+
+springdoc:
+  swagger-ui:
+    operationsSorter: method
+    tagsSorter: alpha
+    path: /swagger-ui.html
+    enabled: true
+  api-docs:
+    path: /v3/api-docs
+    enabled: true
+
+workflow:
+  compiler:
+    strictJoins: false
+    allowJoinInference: true
+  validation:
+    strictJoins: false
+    strictJoinUpstreams: false
+    requireExplicitJoin: false
+  error:
+    policy: FAIL
+  job:
+    require-workflow-id: true
+  executor:
+    core-pool-size: 4
+    max-pool-size: 16
+    queue-capacity: 100
+    thread-name-prefix: wf-
+    await-termination-seconds: 60
+  subgraph:
+    maxExpansionDepth: 10
+  restart:
+    preserveState: true
