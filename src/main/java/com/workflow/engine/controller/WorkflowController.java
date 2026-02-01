@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.UUID;
+
 /**
  * REST controller for workflow execution endpoints.
  *
@@ -54,6 +56,7 @@ public class WorkflowController {
     public ResponseEntity<WorkflowExecutionResponseDto> executeWorkflow(@RequestBody WorkflowDefinition workflow) {
         logger.info("Received workflow execution request: {}", workflow.getName());
         try {
+            workflow.setId(UUID.randomUUID().toString());
             WorkflowExecutionResponseDto response = workflowExecutionService.executeWorkflowWithResponse(workflow);
             logger.info("Workflow execution completed: {}", workflow.getName());
             return ResponseEntity.ok(response);

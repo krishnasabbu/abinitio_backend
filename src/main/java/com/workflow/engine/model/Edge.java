@@ -1,5 +1,6 @@
 package com.workflow.engine.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
@@ -29,6 +30,7 @@ import lombok.Data;
  * @see NodeDefinition
  */
 @Data
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Edge {
     /** ID of the source (originating) node */
     private String source;

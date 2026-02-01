@@ -1,5 +1,7 @@
 package com.workflow.engine.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Data;
 import java.util.List;
 
@@ -32,8 +34,10 @@ import java.util.List;
  * @see GraphValidator
  */
 @Data
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class WorkflowDefinition {
     /** Unique identifier for this workflow */
+    @JsonIgnore
     private String id;
 
     /** Human-readable name for this workflow */

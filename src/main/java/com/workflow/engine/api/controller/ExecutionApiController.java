@@ -2,12 +2,18 @@ package com.workflow.engine.api.controller;
 
 import com.workflow.engine.api.dto.WorkflowExecutionDto;
 import com.workflow.engine.api.dto.NodeExecutionDto;
+import com.workflow.engine.api.dto.WorkflowExecutionResponseDto;
 import com.workflow.engine.api.service.ExecutionApiService;
+import com.workflow.engine.controller.WorkflowController;
+import com.workflow.engine.model.WorkflowDefinition;
+import com.workflow.engine.service.WorkflowExecutionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,13 +21,18 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api")
 @Tag(name = "Executions", description = "Operations related to workflow execution and monitoring")
 public class ExecutionApiController {
+
+    private static final Logger logger = LoggerFactory.getLogger(ExecutionApiController.class);
     @Autowired
     private ExecutionApiService executionApiService;
+    @Autowired
+    private WorkflowExecutionService workflowExecutionService;
 
     @PostMapping(value = "/execute", produces = "application/json")
     @Operation(summary = "Execute workflow", description = "Execute a workflow with specified execution mode and configuration")
@@ -31,12 +42,21 @@ public class ExecutionApiController {
         @ApiResponse(responseCode = "404", description = "Workflow not found"),
         @ApiResponse(responseCode = "500", description = "Internal server error")
     })
-    public ResponseEntity<Map<String, Object>> executeWorkflow(
-            @Parameter(description = "Mode of execution (SEQUENTIAL, PARALLEL, DISTRIBUTED)", required = true)
-            @RequestParam String execution_mode,
-            @RequestBody Map<String, Object> request) {
-        Map<String, Object> result = executionApiService.executeWorkflow(execution_mode, request);
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(result);
+    public ResponseEntity<WorkflowExecutionResponseDto> executeWorkflow(@RequestBody WorkflowDefinition workflow) {
+        logger.info("Received workflow execution request: {}", workflow.getName());
+        try {
+            workflow.setId(UUID.randomUUID().toString());
+            WorkflowExecutionResponseDto response = workflowExecutionService.executeWorkflowWithResponse(workflow);
+            logger.info("Workflow execution completed: {}", workflow.getName());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Workflow execution failed: {}", workflow.getName(), e);
+            WorkflowExecutionResponseDto errorResponse = new WorkflowExecutionResponseDto();
+            errorResponse.setWorkflowName(workflow.getName());
+            errorResponse.setStatus("FAILED");
+            errorResponse.setErrorMessage("Workflow execution failed: " + e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
     }
 
     @GetMapping(value = "/executions", produces = "application/json")
