@@ -3,6 +3,7 @@ package com.workflow.engine.graph;
 import com.workflow.engine.execution.routing.OutputPort;
 import com.workflow.engine.execution.NodeExecutorRegistry;
 import com.workflow.engine.model.*;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import org.slf4j.Logger;
@@ -17,8 +18,22 @@ public class ExecutionGraphBuilder {
     private static final Logger logger = LoggerFactory.getLogger(ExecutionGraphBuilder.class);
     private final NodeExecutorRegistry nodeExecutorRegistry;
 
+    @Value("${workflow.compiler.strictJoins:true}")
+    private boolean strictJoins = true;
+
+    @Value("${workflow.compiler.allowJoinInference:false}")
+    private boolean allowJoinInference = false;
+
     public ExecutionGraphBuilder(NodeExecutorRegistry nodeExecutorRegistry) {
         this.nodeExecutorRegistry = nodeExecutorRegistry;
+    }
+
+    public void setStrictJoins(boolean strictJoins) {
+        this.strictJoins = strictJoins;
+    }
+
+    public void setAllowJoinInference(boolean allowJoinInference) {
+        this.allowJoinInference = allowJoinInference;
     }
 
     private String normalize(String nodeType) {
@@ -61,10 +76,31 @@ public class ExecutionGraphBuilder {
                 : new ExecutionHints();
 
             if (kind == StepKind.FORK && nextSteps.size() > 1) {
-                String joinNodeId = findConvergenceJoin(node.getId(), nextSteps, dataAdjacency, nodeMap, reverseDataAdjacency);
-                if (joinNodeId != null && hints.getJoinNodeId() == null) {
-                    hints.setJoinNodeId(joinNodeId);
-                    logger.debug("Inferred joinNodeId='{}' for FORK node '{}'", joinNodeId, node.getId());
+                String explicitJoinNodeId = hints.getJoinNodeId();
+                if (explicitJoinNodeId == null) {
+                    if (allowJoinInference) {
+                        String inferredJoinId = findConvergenceJoin(node.getId(), nextSteps, dataAdjacency, nodeMap, reverseDataAdjacency);
+                        if (inferredJoinId != null) {
+                            hints.setJoinNodeId(inferredJoinId);
+                            logger.warn("[COMPILER] Inferred joinNodeId='{}' for FORK '{}'. " +
+                                "Explicit declaration is recommended. Set executionHints.joinNodeId.", inferredJoinId, node.getId());
+                        } else if (strictJoins) {
+                            throw new GraphValidationException(String.format(
+                                "FORK node '%s' has %d branches but no joinNodeId could be determined. " +
+                                "Explicit joinNodeId declaration required in strict mode.",
+                                node.getId(), nextSteps.size()));
+                        }
+                    } else if (strictJoins) {
+                        throw new GraphValidationException(String.format(
+                            "FORK node '%s' has %d branches but no explicit joinNodeId declared. " +
+                            "Set executionHints.joinNodeId to the target JOIN node. " +
+                            "(workflow.compiler.allowJoinInference=false)",
+                            node.getId(), nextSteps.size()));
+                    } else {
+                        logger.warn("[COMPILER] FORK node '{}' has {} branches but no joinNodeId. " +
+                            "This may cause duplicate downstream execution.",
+                            node.getId(), nextSteps.size());
+                    }
                 }
             }
 
@@ -245,6 +281,9 @@ public class ExecutionGraphBuilder {
     }
 
     private void validateForkJoinSemantics(Map<String, StepNode> steps) {
+        logger.info("[COMPILER] Validating fork/join semantics (strictJoins={}, allowJoinInference={})",
+            strictJoins, allowJoinInference);
+
         for (Map.Entry<String, StepNode> entry : steps.entrySet()) {
             String nodeId = entry.getKey();
             StepNode node = entry.getValue();
@@ -257,8 +296,15 @@ public class ExecutionGraphBuilder {
                         : null;
 
                     if (joinNodeId == null) {
-                        logger.warn("FORK node '{}' has {} branches but no explicit joinNodeId. " +
-                            "This may cause duplicate downstream execution.", nodeId, nextSteps.size());
+                        String msg = String.format(
+                            "FORK node '%s' has %d branches but no joinNodeId declared",
+                            nodeId, nextSteps.size());
+                        if (strictJoins) {
+                            throw new GraphValidationException(msg +
+                                ". Explicit joinNodeId required in strict mode.");
+                        } else {
+                            logger.warn("[COMPILER] {} - may cause duplicate downstream execution", msg);
+                        }
                     } else {
                         StepNode joinNode = steps.get(joinNodeId);
                         if (joinNode == null) {
@@ -267,9 +313,18 @@ public class ExecutionGraphBuilder {
                                 nodeId, joinNodeId));
                         }
                         if (joinNode.kind() != StepKind.JOIN && joinNode.kind() != StepKind.BARRIER) {
-                            logger.warn("FORK node '{}' references joinNodeId '{}' but that node has kind={}, not JOIN",
+                            String msg = String.format(
+                                "FORK node '%s' references joinNodeId '%s' but that node has kind=%s, not JOIN/BARRIER",
                                 nodeId, joinNodeId, joinNode.kind());
+                            if (strictJoins) {
+                                throw new GraphValidationException(msg);
+                            } else {
+                                logger.warn("[COMPILER] {}", msg);
+                            }
                         }
+
+                        validateAllBranchesReachJoin(nodeId, nextSteps, joinNodeId, steps);
+                        logger.debug("[COMPILER] Validated FORK '{}' -> JOIN '{}'", nodeId, joinNodeId);
                     }
                 }
             }
@@ -277,13 +332,47 @@ public class ExecutionGraphBuilder {
             if (node.kind() == StepKind.JOIN) {
                 List<String> upstream = node.upstreamSteps();
                 if (upstream == null || upstream.size() < 2) {
-                    logger.debug("JOIN node '{}' has {} upstream steps (expected >= 2)",
+                    logger.warn("[COMPILER] JOIN node '{}' has {} upstream steps (expected >= 2)",
                         nodeId, upstream != null ? upstream.size() : 0);
                 }
             }
         }
 
         detectImplicitJoins(steps);
+    }
+
+    private void validateAllBranchesReachJoin(String forkId, List<String> branches, String joinNodeId,
+                                               Map<String, StepNode> steps) {
+        for (String branch : branches) {
+            if (!canReachNode(branch, joinNodeId, steps, new HashSet<>())) {
+                throw new GraphValidationException(String.format(
+                    "FORK '%s' branch '%s' cannot reach declared join '%s'. " +
+                    "All branches must converge at the join point.",
+                    forkId, branch, joinNodeId));
+            }
+        }
+    }
+
+    private boolean canReachNode(String fromId, String targetId, Map<String, StepNode> steps, Set<String> visited) {
+        if (fromId.equals(targetId)) {
+            return true;
+        }
+        if (visited.contains(fromId)) {
+            return false;
+        }
+        visited.add(fromId);
+
+        StepNode node = steps.get(fromId);
+        if (node == null || node.nextSteps() == null) {
+            return false;
+        }
+
+        for (String nextId : node.nextSteps()) {
+            if (canReachNode(nextId, targetId, steps, visited)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void detectImplicitJoins(Map<String, StepNode> steps) {
@@ -303,10 +392,19 @@ public class ExecutionGraphBuilder {
 
             if (upstream.size() > 1) {
                 StepNode node = steps.get(nodeId);
-                if (node != null && node.kind() != StepKind.JOIN && node.kind() != StepKind.BARRIER) {
-                    logger.warn("Node '{}' (kind={}) has {} incoming edges from {} but is not a JOIN. " +
-                        "This may cause duplicate execution. Consider making it a JOIN node.",
+                if (node != null && node.kind() != StepKind.JOIN && node.kind() != StepKind.BARRIER
+                    && node.kind() != StepKind.DECISION) {
+                    String msg = String.format(
+                        "Implicit join detected: Node '%s' (kind=%s) has %d incoming edges from %s " +
+                        "but is not a JOIN/BARRIER. This will cause duplicate execution.",
                         nodeId, node.kind(), upstream.size(), upstream);
+
+                    if (strictJoins) {
+                        throw new GraphValidationException(msg +
+                            " Add kind=JOIN to this node or restructure the graph.");
+                    } else {
+                        logger.warn("[COMPILER] {}", msg);
+                    }
                 }
             }
         }
