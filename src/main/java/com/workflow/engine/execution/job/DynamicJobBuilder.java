@@ -158,7 +158,7 @@ public class DynamicJobBuilder {
             validateForkJoinStructure(ctx);
 
             EdgeBufferStore bufferStore = new EdgeBufferStore();
-            String executionId = effectiveWorkflowId;
+            String executionId = stepFactory.getExecutionId() != null ? stepFactory.getExecutionId() : effectiveWorkflowId;
             buildAllSteps(ctx, bufferStore, executionId);
 
             Flow mainFlow = buildMainFlow(ctx);

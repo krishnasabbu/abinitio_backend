@@ -55,6 +55,10 @@ public class StepFactory {
         this.executionId = executionId;
     }
 
+    public String getExecutionId() {
+        return this.executionId;
+    }
+
     private String normalize(String nodeType) {
         return nodeType == null ? "" : nodeType.trim();
     }
