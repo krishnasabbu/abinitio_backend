@@ -43,7 +43,7 @@ public class PersistenceJobListener implements JobExecutionListener {
 
             String errorMessage = null;
             if (jobExecution.getFailureExceptions() != null && !jobExecution.getFailureExceptions().isEmpty()) {
-                Exception ex = jobExecution.getFailureExceptions().get(0);
+                Throwable ex = jobExecution.getFailureExceptions().get(0);
                 errorMessage = ex.getMessage();
             }
 

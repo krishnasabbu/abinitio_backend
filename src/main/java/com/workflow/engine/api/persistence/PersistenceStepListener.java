@@ -3,6 +3,7 @@ package com.workflow.engine.api.persistence;
 import com.workflow.engine.graph.StepNode;
 import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.StepExecutionListener;
+import org.springframework.batch.core.ExitStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,11 +49,11 @@ public class PersistenceStepListener implements StepExecutionListener {
     }
 
     @Override
-    public void afterStep(StepExecution stepExecution) {
+    public ExitStatus afterStep(StepExecution stepExecution) {
         try {
             String nodeExecutionId = (String) stepExecution.getExecutionContext().get("nodeExecutionId");
             if (nodeExecutionId == null) {
-                return;
+                return stepExecution.getExitStatus();
             }
 
             long endTime = System.currentTimeMillis();
@@ -62,7 +63,7 @@ public class PersistenceStepListener implements StepExecutionListener {
             String errorMessage = null;
 
             if (stepExecution.getFailureExceptions() != null && !stepExecution.getFailureExceptions().isEmpty()) {
-                Exception ex = stepExecution.getFailureExceptions().get(0);
+                Throwable ex = stepExecution.getFailureExceptions().get(0);
                 errorMessage = ex.getMessage();
             }
 
@@ -82,8 +83,10 @@ public class PersistenceStepListener implements StepExecutionListener {
             }
 
             logger.debug("Node execution completed: {}, status: {}, records: {}", stepNode.nodeId(), status, readCount);
+            return stepExecution.getExitStatus();
         } catch (Exception e) {
             logger.error("Error recording step completion for node {}", stepNode.nodeId(), e);
+            return stepExecution.getExitStatus();
         }
     }
 

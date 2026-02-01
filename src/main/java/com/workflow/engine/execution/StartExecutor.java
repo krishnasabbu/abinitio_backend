@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
@@ -57,8 +58,8 @@ public class StartExecutor implements NodeExecutor<Map<String, Object>, Map<Stri
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
         logger.debug("nodeId={}, Creating start writer", context.getNodeDefinition().getId());
-        return items -> {
-            List<Map<String, Object>> outputList = new ArrayList<>(items);
+        return chunk -> {
+            List<Map<String, Object>> outputList = new ArrayList<>(chunk.getItems());
             logger.info("nodeId={}, Workflow started with {} items", context.getNodeDefinition().getId(), outputList.size());
             context.setVariable("outputItems", outputList);
         };

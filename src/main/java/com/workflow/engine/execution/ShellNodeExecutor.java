@@ -1,6 +1,7 @@
 package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
@@ -39,7 +40,7 @@ public class ShellNodeExecutor implements NodeExecutor<Map<String, Object>, Map<
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
-        return items -> context.setVariable("outputItems", new ArrayList<>(items));
+        return items -> context.setVariable("outputItems", new ArrayList<>(items.getItems()));
     }
 
     @Override

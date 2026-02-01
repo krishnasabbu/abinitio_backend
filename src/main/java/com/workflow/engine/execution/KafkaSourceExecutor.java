@@ -6,6 +6,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
@@ -54,7 +55,7 @@ public class KafkaSourceExecutor implements NodeExecutor<Map<String, Object>, Ma
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
-        return items -> context.setVariable("outputItems", new ArrayList<>(items));
+        return items -> context.setVariable("outputItems", new ArrayList<>(items.getItems()));
     }
 
     @Override

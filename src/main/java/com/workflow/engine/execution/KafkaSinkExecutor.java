@@ -9,6 +9,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
@@ -53,7 +54,8 @@ public class KafkaSinkExecutor implements NodeExecutor<Map<String, Object>, Map<
         String valueFormat = config.has("valueFormat") ? config.get("valueFormat").asText() : "json";
         String compressionType = config.has("compressionType") ? config.get("compressionType").asText() : "none";
 
-        return items -> {
+        return chunk -> {
+            List<Map<String, Object>> items = chunk.getItems();
             Properties props = new Properties();
             props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
             props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);

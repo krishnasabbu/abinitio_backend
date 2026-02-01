@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -84,7 +85,8 @@ public class RestAPISinkExecutor implements NodeExecutor<Map<String, Object>, Ma
         logger.debug("nodeId={}, REST API sink configured: url={}, method={}, batchSize={}, onFailure={}",
             nodeId, url, method, batchSize, onFailure);
 
-        return items -> {
+        return chunk -> {
+            List<Map<String, Object>> items = chunk.getItems();
             logger.info("nodeId={}, Writing {} items to REST API", nodeId, items.size());
 
             if (batchSize > 1) {

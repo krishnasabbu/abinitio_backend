@@ -16,6 +16,7 @@ public class MetricsApiService {
 
     public Map<String, Object> getSystemResources() {
         OperatingSystemMXBean osBean = ManagementFactory.getOperatingSystemMXBean();
+        com.sun.management.OperatingSystemMXBean sunOsBean = (com.sun.management.OperatingSystemMXBean) osBean;
         MemoryMXBean memBean = ManagementFactory.getMemoryMXBean();
 
         long totalMemory = Runtime.getRuntime().totalMemory() / (1024 * 1024);
@@ -23,7 +24,7 @@ public class MetricsApiService {
         long usedMemory = totalMemory - freeMemory;
 
         Map<String, Object> cpu = Map.of(
-                "percent", osBean.getProcessCpuLoad() * 100.0,
+                "percent", sunOsBean.getProcessCpuLoad() * 100.0,
                 "count", osBean.getAvailableProcessors(),
                 "count_logical", osBean.getAvailableProcessors()
         );

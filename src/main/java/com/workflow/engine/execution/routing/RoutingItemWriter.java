@@ -1,6 +1,7 @@
 package com.workflow.engine.execution.routing;
 
 import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.Chunk;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,7 +21,7 @@ public class RoutingItemWriter implements ItemWriter<Map<String, Object>> {
     }
 
     @Override
-    public void write(List<? extends Map<String, Object>> items) {
+    public void write(Chunk<? extends Map<String, Object>> items) {
         if (items == null || items.isEmpty()) {
             return;
         }

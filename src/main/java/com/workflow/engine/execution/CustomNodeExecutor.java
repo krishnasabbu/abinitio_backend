@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
@@ -39,7 +40,7 @@ public class CustomNodeExecutor implements NodeExecutor<Map<String, Object>, Map
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
-        return items -> context.setVariable("outputItems", new ArrayList<>(items));
+        return items -> context.setVariable("outputItems", new ArrayList<>(items.getItems()));
     }
 
     @Override
