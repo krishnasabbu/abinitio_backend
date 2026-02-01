@@ -140,9 +140,12 @@ public class ExecutionApiService {
 
         Job job = dynamicJobBuilder.buildJob(plan, workflowId);
 
-        // Add job execution listener
-        if (job instanceof org.springframework.batch.core.job.SimpleJob simpleJob) {
-            simpleJob.registerJobExecutionListener(new PersistenceJobListener(jdbcTemplate, executionId));
+        // Add job execution listener (works for FlowJob and SimpleJob)
+        if (job instanceof org.springframework.batch.core.job.AbstractJob abstractJob) {
+            abstractJob.registerJobExecutionListener(new PersistenceJobListener(jdbcTemplate, executionId));
+            logger.debug("Registered PersistenceJobListener for executionId: {}", executionId);
+        } else {
+            logger.warn("Cannot register job listener - job type {} not supported", job.getClass().getName());
         }
 
         // Create job parameters

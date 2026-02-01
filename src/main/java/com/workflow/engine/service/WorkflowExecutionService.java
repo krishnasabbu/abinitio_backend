@@ -2,6 +2,8 @@ package com.workflow.engine.service;
 
 import com.workflow.engine.api.dto.NodeStatusDto;
 import com.workflow.engine.api.dto.WorkflowExecutionResponseDto;
+import com.workflow.engine.graph.ExecutionGraphBuilder;
+import com.workflow.engine.graph.ExecutionPlan;
 import com.workflow.engine.graph.GraphValidator;
 import com.workflow.engine.model.WorkflowDefinition;
 import com.workflow.engine.planner.ExecutionPlanner;
@@ -46,6 +48,7 @@ public class WorkflowExecutionService {
     private static final Logger log = LoggerFactory.getLogger(WorkflowExecutionService.class);
 
     private final ExecutionPlanner executionPlanner;
+    private final ExecutionGraphBuilder executionGraphBuilder;
     private final GraphValidator graphValidator;
     private final JobRepository jobRepository;
     private final JobLauncher jobLauncher;
@@ -57,16 +60,19 @@ public class WorkflowExecutionService {
      * Initializes the Spring Batch JobLauncher for async execution.
      *
      * @param executionPlanner the planner for converting workflows to jobs
+     * @param executionGraphBuilder the builder for creating execution plans
      * @param graphValidator the validator for workflow structure
      * @param jobRepository the Spring Batch job repository
      * @param jdbcTemplate the JDBC template for database operations
      * @throws Exception if JobLauncher initialization fails
      */
     public WorkflowExecutionService(ExecutionPlanner executionPlanner,
+                                   ExecutionGraphBuilder executionGraphBuilder,
                                    GraphValidator graphValidator,
                                    JobRepository jobRepository,
                                    JdbcTemplate jdbcTemplate) throws Exception {
         this.executionPlanner = executionPlanner;
+        this.executionGraphBuilder = executionGraphBuilder;
         this.graphValidator = graphValidator;
         this.jobRepository = jobRepository;
         this.jdbcTemplate = jdbcTemplate;
@@ -166,7 +172,11 @@ public class WorkflowExecutionService {
         String executionId = UUID.randomUUID().toString();
         long startTime = System.currentTimeMillis();
 
-        persistWorkflowExecutionRecord(executionId, workflow, startTime);
+        // Build execution plan first to get total_nodes count
+        ExecutionPlan plan = executionGraphBuilder.build(workflow);
+        int totalNodes = plan.steps().size();
+
+        persistWorkflowExecutionRecord(executionId, workflow, startTime, totalNodes);
 
         Job job = executionPlanner.planExecution(workflow, executionId);
 
@@ -203,18 +213,20 @@ public class WorkflowExecutionService {
      * @param executionId the unique execution identifier
      * @param workflow the workflow definition
      * @param startTime the execution start time
+     * @param totalNodes the total number of nodes in the execution plan
      */
-    private void persistWorkflowExecutionRecord(String executionId, WorkflowDefinition workflow, long startTime) {
+    private void persistWorkflowExecutionRecord(String executionId, WorkflowDefinition workflow, long startTime, int totalNodes) {
         try {
             String id = UUID.randomUUID().toString();
             String workflowId = workflow.getId() != null ? workflow.getId() : "workflow_" + UUID.randomUUID().toString().substring(0, 8);
-            String sql = "INSERT INTO workflow_executions (id, execution_id, workflow_name, workflow_id, status, start_time) " +
-                    "VALUES (?, ?, ?, ?, ?, ?)";
+            String sql = "INSERT INTO workflow_executions (id, execution_id, workflow_name, workflow_id, status, start_time, total_nodes) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)";
 
-            jdbcTemplate.update(sql, id, executionId, workflow.getName(), workflowId, "running", startTime);
-            log.debug("Persisted workflow execution record: executionId={}, workflowId={}", executionId, workflowId);
+            int rowsInserted = jdbcTemplate.update(sql, id, executionId, workflow.getName(), workflowId, "running", startTime, totalNodes);
+            log.info("Persisted workflow execution record: executionId={}, workflowId={}, totalNodes={}, rows={}",
+                executionId, workflowId, totalNodes, rowsInserted);
         } catch (Exception e) {
-            log.warn("Error persisting workflow execution record: {}", e.getMessage());
+            log.error("Error persisting workflow execution record: {}", e.getMessage(), e);
         }
     }
 

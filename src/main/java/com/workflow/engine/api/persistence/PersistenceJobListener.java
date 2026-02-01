@@ -22,11 +22,13 @@ public class PersistenceJobListener implements JobExecutionListener {
 
     @Override
     public void beforeJob(JobExecution jobExecution) {
-        logger.debug("Job starting for execution: {}", executionId);
+        logger.info("PersistenceJobListener.beforeJob() called for executionId: {}", executionId);
     }
 
     @Override
     public void afterJob(JobExecution jobExecution) {
+        logger.info("PersistenceJobListener.afterJob() called for executionId: {}, jobStatus: {}",
+            executionId, jobExecution.getStatus());
         try {
             long endTime = System.currentTimeMillis();
 
@@ -51,11 +53,15 @@ public class PersistenceJobListener implements JobExecutionListener {
                     (errorMessage != null ? ", error_message = ? " : "") +
                     "WHERE execution_id = ?";
 
+            int rowsUpdated;
             if (errorMessage != null) {
-                jdbcTemplate.update(updateSql, finalStatus, endTime, errorMessage, executionId);
+                rowsUpdated = jdbcTemplate.update(updateSql, finalStatus, endTime, errorMessage, executionId);
             } else {
-                jdbcTemplate.update(updateSql, finalStatus, endTime, executionId);
+                rowsUpdated = jdbcTemplate.update(updateSql, finalStatus, endTime, executionId);
             }
+
+            logger.info("Updated workflow_executions: executionId='{}', status='{}', endTime={}, rowsUpdated={}",
+                executionId, finalStatus, endTime, rowsUpdated);
 
             calculateAndUpdateTotals(jobExecution);
 

@@ -7,12 +7,16 @@ import com.workflow.engine.graph.ExecutionGraphBuilder;
 import com.workflow.engine.graph.ExecutionPlan;
 import com.workflow.engine.model.*;
 import org.springframework.batch.core.Job;
-import org.springframework.batch.core.job.SimpleJob;
+import org.springframework.batch.core.job.AbstractJob;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 @Component
 public class ExecutionPlanner {
+
+    private static final Logger logger = LoggerFactory.getLogger(ExecutionPlanner.class);
 
     private final ExecutionGraphBuilder executionGraphBuilder;
     private final DynamicJobBuilder dynamicJobBuilder;
@@ -39,8 +43,11 @@ public class ExecutionPlanner {
         stepFactory.setApiListenerContext(jdbcTemplate, executionId);
         Job job = dynamicJobBuilder.buildJob(plan);
 
-        if (job instanceof SimpleJob simpleJob) {
-            simpleJob.registerJobExecutionListener(new PersistenceJobListener(jdbcTemplate, executionId));
+        if (job instanceof AbstractJob abstractJob) {
+            abstractJob.registerJobExecutionListener(new PersistenceJobListener(jdbcTemplate, executionId));
+            logger.info("Registered PersistenceJobListener for executionId: {}", executionId);
+        } else {
+            logger.warn("Cannot register job listener - job type {} not supported", job.getClass().getName());
         }
 
         return job;

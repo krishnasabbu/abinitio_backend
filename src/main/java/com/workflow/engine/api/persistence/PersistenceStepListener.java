@@ -27,6 +27,8 @@ public class PersistenceStepListener implements StepExecutionListener {
 
     @Override
     public void beforeStep(StepExecution stepExecution) {
+        logger.info("PersistenceStepListener.beforeStep() called for node '{}', executionId='{}'",
+            stepNode.nodeId(), executionId);
         try {
             String nodeId = stepNode.nodeId();
             String nodeLabel = stepNode.nodeId();
@@ -37,22 +39,26 @@ public class PersistenceStepListener implements StepExecutionListener {
                     "VALUES (?, ?, ?, ?, ?, ?, ?)";
 
             String recordId = UUID.randomUUID().toString();
-            jdbcTemplate.update(sql, recordId, executionId, nodeId, nodeLabel, nodeType, "running", startTime);
+            int rowsInserted = jdbcTemplate.update(sql, recordId, executionId, nodeId, nodeLabel, nodeType, "running", startTime);
 
             stepExecution.getExecutionContext().put("nodeExecutionId", recordId);
             stepExecution.getExecutionContext().put("nodeId", nodeId);
 
-            logger.debug("Node execution started: {}, type: {}", nodeId, nodeType);
+            logger.info("Node execution started: node='{}', type='{}', executionId='{}', recordId='{}', rows={}",
+                nodeId, nodeType, executionId, recordId, rowsInserted);
         } catch (Exception e) {
-            logger.error("Error recording step start for node {}", stepNode.nodeId(), e);
+            logger.error("Error recording step start for node '{}': {}", stepNode.nodeId(), e.getMessage(), e);
         }
     }
 
     @Override
     public ExitStatus afterStep(StepExecution stepExecution) {
+        logger.info("PersistenceStepListener.afterStep() called for node '{}', stepStatus='{}'",
+            stepNode.nodeId(), stepExecution.getStatus());
         try {
             String nodeExecutionId = (String) stepExecution.getExecutionContext().get("nodeExecutionId");
             if (nodeExecutionId == null) {
+                logger.warn("nodeExecutionId is null for node '{}', skipping update", stepNode.nodeId());
                 return stepExecution.getExitStatus();
             }
 
@@ -76,16 +82,18 @@ public class PersistenceStepListener implements StepExecutionListener {
                     (errorMessage != null ? ", error_message = ? " : "") +
                     "WHERE id = ?";
 
+            int rowsUpdated;
             if (errorMessage != null) {
-                jdbcTemplate.update(updateSql, status, endTime, executionTimeMs, readCount, errorMessage, nodeExecutionId);
+                rowsUpdated = jdbcTemplate.update(updateSql, status, endTime, executionTimeMs, readCount, errorMessage, nodeExecutionId);
             } else {
-                jdbcTemplate.update(updateSql, status, endTime, executionTimeMs, readCount, nodeExecutionId);
+                rowsUpdated = jdbcTemplate.update(updateSql, status, endTime, executionTimeMs, readCount, nodeExecutionId);
             }
 
-            logger.debug("Node execution completed: {}, status: {}, records: {}", stepNode.nodeId(), status, readCount);
+            logger.info("Node execution completed: node='{}', status='{}', records={}, time={}ms, rowsUpdated={}",
+                stepNode.nodeId(), status, readCount, executionTimeMs, rowsUpdated);
             return stepExecution.getExitStatus();
         } catch (Exception e) {
-            logger.error("Error recording step completion for node {}", stepNode.nodeId(), e);
+            logger.error("Error recording step completion for node '{}': {}", stepNode.nodeId(), e.getMessage(), e);
             return stepExecution.getExitStatus();
         }
     }

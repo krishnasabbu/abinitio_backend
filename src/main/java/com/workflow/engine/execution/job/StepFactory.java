@@ -53,6 +53,8 @@ public class StepFactory {
     public void setApiListenerContext(JdbcTemplate jdbcTemplate, String executionId) {
         this.jdbcTemplate = jdbcTemplate;
         this.executionId = executionId;
+        logger.info("API Listener context set: jdbcTemplate={}, executionId={}",
+            jdbcTemplate != null ? "present" : "null", executionId);
     }
 
     public String getExecutionId() {
@@ -121,13 +123,20 @@ public class StepFactory {
             chunkBuilder.listener(listener);
         }
 
-        if (jdbcTemplate != null && executionId != null) {
+        logger.debug("Checking persistence listener for node '{}': this.jdbcTemplate={}, param.executionId={}",
+            stepNode.nodeId(), this.jdbcTemplate != null ? "present" : "null", executionId);
+
+        if (this.jdbcTemplate != null && executionId != null) {
             PersistenceStepListener persistenceListener = new PersistenceStepListener(
-                jdbcTemplate,
+                this.jdbcTemplate,
                 stepNode,
                 executionId
             );
             chunkBuilder.listener(persistenceListener);
+            logger.info("Added PersistenceStepListener for node '{}' with executionId '{}'", stepNode.nodeId(), executionId);
+        } else {
+            logger.warn("PersistenceStepListener NOT added for node '{}': jdbcTemplate={}, executionId={}",
+                stepNode.nodeId(), this.jdbcTemplate != null ? "present" : "null", executionId);
         }
 
         if (stepNode.exceptionHandling() != null) {
