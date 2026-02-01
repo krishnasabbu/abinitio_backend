@@ -154,7 +154,9 @@ public class DagUtils {
      */
     public static List<String> findSourceNodes(WorkflowDefinition workflow) {
         logger.debug("Finding source nodes in workflow");
-        Set<String> dataTargets = workflow.getEdges().stream()
+
+        List<Edge> edges = workflow.getEdges() != null ? workflow.getEdges() : new ArrayList<>();
+        Set<String> dataTargets = edges.stream()
             .filter(e -> !e.isControl())
             .map(Edge::getTarget)
             .collect(Collectors.toSet());
