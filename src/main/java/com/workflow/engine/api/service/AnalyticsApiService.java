@@ -128,7 +128,7 @@ public class AnalyticsApiService {
 
     public Map<String, Object> getExecutionHealth(String executionId) {
         try {
-            String sql = "SELECT status, total_nodes, completed_nodes, successful_nodes, failed_nodes, " +
+            String sql = "SELECT status, total_nodes, completed_nodes, failed_nodes, " +
                     "total_execution_time_ms, total_records FROM workflow_executions WHERE execution_id = ?";
 
             List<Map<String, Object>> result = jdbcTemplate.queryForList(sql, executionId);
@@ -143,8 +143,9 @@ public class AnalyticsApiService {
             Map<String, Object> exec = result.get(0);
             Integer totalNodes = exec.get("total_nodes") != null ? ((Number) exec.get("total_nodes")).intValue() : 0;
             Integer completedNodes = exec.get("completed_nodes") != null ? ((Number) exec.get("completed_nodes")).intValue() : 0;
-            Integer successfulNodes = exec.get("successful_nodes") != null ? ((Number) exec.get("successful_nodes")).intValue() : 0;
             Integer failedNodes = exec.get("failed_nodes") != null ? ((Number) exec.get("failed_nodes")).intValue() : 0;
+            Integer successfulNodes = completedNodes - failedNodes;
+            if (successfulNodes < 0) successfulNodes = 0;
             Long totalRecords = exec.get("total_records") != null ? ((Number) exec.get("total_records")).longValue() : 0;
             Long totalExecutionTimeMs = exec.get("total_execution_time_ms") != null ? ((Number) exec.get("total_execution_time_ms")).longValue() : 0;
 
@@ -175,7 +176,7 @@ public class AnalyticsApiService {
     public Map<String, Object> getExecutionPerformance(String executionId) {
         try {
             String sql = "SELECT status, total_execution_time_ms, total_records, total_nodes, " +
-                    "completed_nodes, successful_nodes, failed_nodes, start_time, end_time " +
+                    "completed_nodes, failed_nodes, start_time, end_time " +
                     "FROM workflow_executions WHERE execution_id = ?";
             List<Map<String, Object>> result = jdbcTemplate.queryForList(sql, executionId);
 
@@ -192,8 +193,9 @@ public class AnalyticsApiService {
             Long records = exec.get("total_records") != null ? ((Number) exec.get("total_records")).longValue() : 0;
             Integer totalNodes = exec.get("total_nodes") != null ? ((Number) exec.get("total_nodes")).intValue() : 0;
             Integer completedNodes = exec.get("completed_nodes") != null ? ((Number) exec.get("completed_nodes")).intValue() : 0;
-            Integer successfulNodes = exec.get("successful_nodes") != null ? ((Number) exec.get("successful_nodes")).intValue() : 0;
             Integer failedNodes = exec.get("failed_nodes") != null ? ((Number) exec.get("failed_nodes")).intValue() : 0;
+            Integer successfulNodes = completedNodes - failedNodes;
+            if (successfulNodes < 0) successfulNodes = 0;
 
             double throughput = duration > 0 ? (records * 1000.0 / duration) : 0;
             double nodesPerSecond = duration > 0 ? (completedNodes * 1000.0 / duration) : 0;

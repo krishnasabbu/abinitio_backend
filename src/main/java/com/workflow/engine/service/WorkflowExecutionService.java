@@ -330,7 +330,7 @@ public class WorkflowExecutionService {
             }
 
             String updateSql = "UPDATE workflow_executions SET status = ?, end_time = ?, " +
-                    "completed_nodes = ?, successful_nodes = ?, failed_nodes = ?, " +
+                    "completed_nodes = ?, failed_nodes = ?, " +
                     "total_records = ?, total_execution_time_ms = ?" +
                     (errorMessage != null ? ", error_message = ? " : " ") +
                     "WHERE execution_id = ?";
@@ -343,11 +343,11 @@ public class WorkflowExecutionService {
             int rowsUpdated;
             if (errorMessage != null) {
                 rowsUpdated = jdbcTemplate.update(updateSql, status, endTime,
-                        response.getCompletedNodes(), response.getSuccessfulNodes(), response.getFailedNodes(),
+                        response.getCompletedNodes(), response.getFailedNodes(),
                         totalRecords, response.getExecutionTimeMs(), errorMessage, executionId);
             } else {
                 rowsUpdated = jdbcTemplate.update(updateSql, status, endTime,
-                        response.getCompletedNodes(), response.getSuccessfulNodes(), response.getFailedNodes(),
+                        response.getCompletedNodes(), response.getFailedNodes(),
                         totalRecords, response.getExecutionTimeMs(), executionId);
             }
 

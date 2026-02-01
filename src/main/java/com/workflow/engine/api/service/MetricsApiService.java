@@ -93,7 +93,7 @@ public class MetricsApiService {
         } catch (Exception e) {
         }
 
-        String execSql = "SELECT status, total_nodes, successful_nodes, failed_nodes, total_records, total_execution_time_ms FROM workflow_executions WHERE execution_id = ?";
+        String execSql = "SELECT status, total_nodes, failed_nodes, total_records, total_execution_time_ms FROM workflow_executions WHERE execution_id = ?";
         Map<String, Object> execInfo = new HashMap<>();
         try {
             List<Map<String, Object>> execResult = jdbcTemplate.queryForList(execSql, executionId);
@@ -113,7 +113,6 @@ public class MetricsApiService {
         Map<String, Object> summary = new HashMap<>();
         summary.put("status", execInfo.getOrDefault("status", "unknown"));
         summary.put("total_nodes", execInfo.getOrDefault("total_nodes", 0));
-        summary.put("successful_nodes", execInfo.getOrDefault("successful_nodes", 0));
         summary.put("failed_nodes", execInfo.getOrDefault("failed_nodes", 0));
         summary.put("total_records", execInfo.getOrDefault("total_records", 0));
         summary.put("total_execution_time_ms", execInfo.getOrDefault("total_execution_time_ms", 0));

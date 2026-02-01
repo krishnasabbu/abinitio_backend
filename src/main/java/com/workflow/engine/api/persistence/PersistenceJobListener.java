@@ -88,12 +88,11 @@ public class PersistenceJobListener implements JobExecutionListener {
             Long totalTime = jdbcTemplate.queryForObject(sumTimeSql, Long.class, executionId);
 
             String updateTotalsSql = "UPDATE workflow_executions SET completed_nodes = ?, " +
-                    "successful_nodes = ?, failed_nodes = ?, total_records = ?, total_execution_time_ms = ? " +
+                    "failed_nodes = ?, total_records = ?, total_execution_time_ms = ? " +
                     "WHERE execution_id = ?";
 
             int updated = jdbcTemplate.update(updateTotalsSql,
                     completedNodes,
-                    successfulNodes != null ? successfulNodes : 0,
                     failedNodes != null ? failedNodes : 0,
                     totalRecords != null ? totalRecords : 0,
                     totalTime != null ? totalTime : 0,

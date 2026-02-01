@@ -186,7 +186,7 @@ public class ExecutionApiService {
     }
 
     public List<WorkflowExecutionDto> getExecutionHistory(String workflowId) {
-        String sql = "SELECT id, execution_id, workflow_name, status, start_time, end_time, total_nodes, completed_nodes, failed_nodes, total_records, total_execution_time_ms, execution_mode, planning_start_time, max_parallel_nodes, peak_workers, total_input_records, total_output_records, total_bytes_read, total_bytes_written, error_message FROM workflow_executions";
+        String sql = "SELECT id, execution_id, workflow_name, status, start_time, end_time, total_nodes, completed_nodes, failed_nodes, total_records, total_execution_time_ms, execution_mode, error_message FROM workflow_executions";
         if (workflowId != null && !workflowId.isEmpty()) {
             sql += " WHERE workflow_id = ? ORDER BY start_time DESC";
             return jdbcTemplate.query(sql, new Object[]{workflowId}, this::mapExecutionDto);
@@ -196,14 +196,14 @@ public class ExecutionApiService {
     }
 
     public WorkflowExecutionDto getExecutionById(String executionId) {
-        String sql = "SELECT id, execution_id, workflow_name, status, start_time, end_time, total_nodes, completed_nodes, failed_nodes, total_records, total_execution_time_ms, execution_mode, planning_start_time, max_parallel_nodes, peak_workers, total_input_records, total_output_records, total_bytes_read, total_bytes_written, error_message FROM workflow_executions WHERE execution_id = ?";
+        String sql = "SELECT id, execution_id, workflow_name, status, start_time, end_time, total_nodes, completed_nodes, failed_nodes, total_records, total_execution_time_ms, execution_mode, error_message FROM workflow_executions WHERE execution_id = ?";
         List<WorkflowExecutionDto> result = jdbcTemplate.query(sql, new Object[]{executionId}, this::mapExecutionDto);
         return result.isEmpty() ? null : result.get(0);
     }
 
     public List<NodeExecutionDto> getNodeExecutions(String executionId) {
         try {
-            String sql = "SELECT id, execution_id, node_id, node_label, node_type, status, start_time, end_time, execution_time_ms, records_processed, input_records, output_records, input_bytes, output_bytes, queue_wait_time_ms, depth_in_dag, retry_count, error_message FROM node_executions WHERE execution_id = ? ORDER BY start_time ASC";
+            String sql = "SELECT id, execution_id, node_id, node_label, node_type, status, start_time, end_time, execution_time_ms, records_processed, retry_count, error_message FROM node_executions WHERE execution_id = ? ORDER BY start_time ASC";
             List<NodeExecutionDto> result = jdbcTemplate.query(sql, new Object[]{executionId}, (rs, rowNum) -> {
                 NodeExecutionDto dto = new NodeExecutionDto();
                 dto.setExecutionId(rs.getString("execution_id"));
@@ -212,7 +212,6 @@ public class ExecutionApiService {
                 dto.setNodeType(rs.getString("node_type"));
                 dto.setStatus(rs.getString("status"));
 
-                // Convert timestamps to ISO 8601
                 Long startTimeMs = rs.getLong("start_time");
                 if (startTimeMs > 0) {
                     dto.setStartTimeMs(startTimeMs);
@@ -223,52 +222,15 @@ public class ExecutionApiService {
                     dto.setEndTimeMs(endTimeMs);
                 }
 
-                dto.setExecutionTimeMs(rs.getLong("execution_time_ms"));
-                dto.setRecordsProcessed(rs.getLong("records_processed"));
-
-                // Set optional fields
-                Long inputRecords = rs.getLong("input_records");
-                if (inputRecords != null && inputRecords > 0) {
-                    dto.setInputRecords(inputRecords);
-                }
-
-                Long outputRecords = rs.getLong("output_records");
-                if (outputRecords != null && outputRecords > 0) {
-                    dto.setOutputRecords(outputRecords);
-                }
-
-                Long inputBytes = rs.getLong("input_bytes");
-                if (inputBytes != null && inputBytes > 0) {
-                    dto.setInputBytes(inputBytes);
-                }
-
-                Long outputBytes = rs.getLong("output_bytes");
-                if (outputBytes != null && outputBytes > 0) {
-                    dto.setOutputBytes(outputBytes);
-                }
-
-                Long queueWaitTimeMs = rs.getLong("queue_wait_time_ms");
-                if (queueWaitTimeMs != null && queueWaitTimeMs > 0) {
-                    dto.setQueueWaitTimeMs(queueWaitTimeMs);
-                }
-
-                int depthInDag = rs.getInt("depth_in_dag");
-                if (depthInDag >= 0) {
-                    dto.setDepthInDag(depthInDag);
-                }
-
-                // Calculate derived metrics
                 Long executionTimeMs = rs.getLong("execution_time_ms");
+                dto.setExecutionTimeMs(executionTimeMs);
+
                 Long recordsProc = rs.getLong("records_processed");
+                dto.setRecordsProcessed(recordsProc);
 
                 if (executionTimeMs > 0 && recordsProc != null && recordsProc > 0) {
                     double recordsPerSecond = (recordsProc * 1000.0) / executionTimeMs;
                     dto.setRecordsPerSecond(recordsPerSecond);
-                }
-
-                if (executionTimeMs > 0 && outputBytes != null && outputBytes > 0) {
-                    double bytesPerSecond = (outputBytes * 1000.0) / executionTimeMs;
-                    dto.setBytesPerSecond(bytesPerSecond);
                 }
 
                 dto.setRetryCount(rs.getInt("retry_count"));
@@ -603,7 +565,7 @@ public class ExecutionApiService {
     }
 
     public Map<String, Object> getRecentExecutions(int limit) {
-        String sql = "SELECT id, execution_id, workflow_name, status, start_time, end_time, total_nodes, completed_nodes, successful_nodes, failed_nodes, total_records, total_execution_time_ms, error_message FROM workflow_executions ORDER BY start_time DESC LIMIT ?";
+        String sql = "SELECT id, execution_id, workflow_name, status, start_time, end_time, total_nodes, completed_nodes, failed_nodes, total_records, total_execution_time_ms, execution_mode, error_message FROM workflow_executions ORDER BY start_time DESC LIMIT ?";
         List<WorkflowExecutionDto> executions = jdbcTemplate.query(sql, new Object[]{limit}, this::mapExecutionDto);
         return Map.of("executions", executions);
     }
@@ -614,7 +576,6 @@ public class ExecutionApiService {
         dto.setWorkflowName(rs.getString("workflow_name"));
         dto.setStatus(rs.getString("status"));
 
-        // Convert timestamps to ISO 8601
         Long startTimeMs = rs.getLong("start_time");
         if (startTimeMs > 0) {
             dto.setStartTimeMs(startTimeMs);
@@ -631,45 +592,9 @@ public class ExecutionApiService {
         dto.setTotalRecordsProcessed(rs.getLong("total_records"));
         dto.setTotalExecutionTimeMs(rs.getLong("total_execution_time_ms"));
 
-        // Set new optional fields
         String executionMode = rs.getString("execution_mode");
         if (executionMode != null) {
             dto.setExecutionMode(executionMode.toLowerCase());
-        }
-
-        Long planningStartTimeMs = rs.getLong("planning_start_time");
-        if (planningStartTimeMs > 0) {
-            dto.setPlanningStartTimeMs(planningStartTimeMs);
-        }
-
-        int maxParallelNodes = rs.getInt("max_parallel_nodes");
-        if (maxParallelNodes > 0) {
-            dto.setMaxParallelNodes(maxParallelNodes);
-        }
-
-        int peakWorkers = rs.getInt("peak_workers");
-        if (peakWorkers > 0) {
-            dto.setPeakWorkers(peakWorkers);
-        }
-
-        Long totalInputRecords = rs.getLong("total_input_records");
-        if (totalInputRecords != null && totalInputRecords > 0) {
-            dto.setTotalInputRecords(totalInputRecords);
-        }
-
-        Long totalOutputRecords = rs.getLong("total_output_records");
-        if (totalOutputRecords != null && totalOutputRecords > 0) {
-            dto.setTotalOutputRecords(totalOutputRecords);
-        }
-
-        Long totalBytesRead = rs.getLong("total_bytes_read");
-        if (totalBytesRead != null && totalBytesRead > 0) {
-            dto.setTotalBytesRead(totalBytesRead);
-        }
-
-        Long totalBytesWritten = rs.getLong("total_bytes_written");
-        if (totalBytesWritten != null && totalBytesWritten > 0) {
-            dto.setTotalBytesWritten(totalBytesWritten);
         }
 
         String errorMessage = rs.getString("error_message");
