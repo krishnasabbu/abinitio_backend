@@ -19,7 +19,7 @@ public class SystemStatusApiController {
     @Autowired
     private SystemStatusApiService systemStatusApiService;
 
-    @GetMapping("/system/status")
+    @GetMapping(value = "/system/status", produces = "application/json")
     @Operation(summary = "Get system status", description = "Retrieve current system status and health information")
     @ApiResponse(responseCode = "200", description = "System status retrieved successfully")
     @ApiResponse(responseCode = "500", description = "Internal server error")

@@ -24,7 +24,7 @@ public class WorkflowApiController {
     @Autowired
     private WorkflowApiService workflowApiService;
 
-    @GetMapping("/workflows")
+    @GetMapping(value = "/workflows", produces = "application/json")
     @Operation(summary = "List all workflows", description = "Retrieve a list of all workflow definitions stored in the system")
     @ApiResponse(responseCode = "200", description = "Successfully retrieved workflows")
     @ApiResponse(responseCode = "500", description = "Internal server error")
@@ -33,7 +33,7 @@ public class WorkflowApiController {
         return ResponseEntity.ok(workflows);
     }
 
-    @GetMapping("/workflows/{id}")
+    @GetMapping(value = "/workflows/{id}", produces = "application/json")
     @Operation(summary = "Get workflow by ID", description = "Retrieve a specific workflow definition by its ID")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Workflow found"),
@@ -50,7 +50,7 @@ public class WorkflowApiController {
         return ResponseEntity.ok(workflow);
     }
 
-    @PostMapping("/workflows")
+    @PostMapping(value = "/workflows", produces = "application/json")
     @Operation(summary = "Create a new workflow", description = "Create a new workflow definition with the provided configuration")
     @ApiResponses({
         @ApiResponse(responseCode = "201", description = "Workflow created successfully"),
@@ -62,7 +62,7 @@ public class WorkflowApiController {
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("id", id));
     }
 
-    @PutMapping("/workflows/{id}")
+    @PutMapping(value = "/workflows/{id}", produces = "application/json")
     @Operation(summary = "Update workflow", description = "Update an existing workflow definition")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Workflow updated successfully"),
@@ -77,7 +77,7 @@ public class WorkflowApiController {
         return ResponseEntity.ok().build();
     }
 
-    @DeleteMapping("/workflows/{id}")
+    @DeleteMapping(value = "/workflows/{id}", produces = "application/json")
     @Operation(summary = "Delete workflow", description = "Delete a workflow definition by its ID")
     @ApiResponses({
         @ApiResponse(responseCode = "204", description = "Workflow deleted successfully"),
@@ -91,7 +91,7 @@ public class WorkflowApiController {
         return ResponseEntity.noContent().build();
     }
 
-    @GetMapping("/workflows/stats")
+    @GetMapping(value = "/workflows/stats", produces = "application/json")
     @Operation(summary = "Get workflow statistics", description = "Retrieve aggregated statistics across all workflows")
     @ApiResponse(responseCode = "200", description = "Statistics retrieved successfully")
     @ApiResponse(responseCode = "500", description = "Internal server error")
@@ -100,7 +100,7 @@ public class WorkflowApiController {
         return ResponseEntity.ok(stats);
     }
 
-    @GetMapping("/workflows/recent")
+    @GetMapping(value = "/workflows/recent", produces = "application/json")
     @Operation(summary = "Get recent workflows", description = "Retrieve the most recently created or modified workflows")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Recent workflows retrieved successfully"),
@@ -114,7 +114,7 @@ public class WorkflowApiController {
         return ResponseEntity.ok(recent);
     }
 
-    @GetMapping("/workflows/{workflowId}/analytics")
+    @GetMapping(value = "/workflows/{workflowId}/analytics", produces = "application/json")
     @Operation(summary = "Get workflow analytics", description = "Retrieve detailed analytics for a specific workflow")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Analytics retrieved successfully"),

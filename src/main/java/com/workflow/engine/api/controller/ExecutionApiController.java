@@ -23,7 +23,7 @@ public class ExecutionApiController {
     @Autowired
     private ExecutionApiService executionApiService;
 
-    @PostMapping("/execute")
+    @PostMapping(value = "/execute", produces = "application/json")
     @Operation(summary = "Execute workflow", description = "Execute a workflow with specified execution mode and configuration")
     @ApiResponses({
         @ApiResponse(responseCode = "202", description = "Workflow execution accepted"),
@@ -39,7 +39,7 @@ public class ExecutionApiController {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(result);
     }
 
-    @GetMapping("/executions")
+    @GetMapping(value = "/executions", produces = "application/json")
     @Operation(summary = "Get execution history", description = "Retrieve execution history, optionally filtered by workflow ID")
     @ApiResponse(responseCode = "200", description = "Execution history retrieved successfully")
     public ResponseEntity<List<WorkflowExecutionDto>> getExecutionHistory(
@@ -49,7 +49,7 @@ public class ExecutionApiController {
         return ResponseEntity.ok(executions);
     }
 
-    @GetMapping("/execution/{executionId}")
+    @GetMapping(value = "/execution/{executionId}", produces = "application/json")
     @Operation(summary = "Get execution by ID", description = "Retrieve detailed information about a specific execution")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Execution found"),
@@ -66,7 +66,7 @@ public class ExecutionApiController {
         return ResponseEntity.ok(execution);
     }
 
-    @GetMapping("/executions/{executionId}/nodes")
+    @GetMapping(value = "/executions/{executionId}/nodes", produces = "application/json")
     @Operation(summary = "Get node executions", description = "Retrieve execution details for all nodes in a workflow execution")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Node executions retrieved successfully"),
@@ -80,7 +80,7 @@ public class ExecutionApiController {
         return ResponseEntity.ok(nodes);
     }
 
-    @GetMapping("/executions/{executionId}/timeline")
+    @GetMapping(value = "/executions/{executionId}/timeline", produces = "application/json")
     @Operation(summary = "Get execution timeline", description = "Retrieve the execution timeline showing the sequence of node executions")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Timeline retrieved successfully"),
@@ -94,7 +94,7 @@ public class ExecutionApiController {
         return ResponseEntity.ok(timeline);
     }
 
-    @GetMapping("/executions/{executionId}/metrics")
+    @GetMapping(value = "/executions/{executionId}/metrics", produces = "application/json")
     @Operation(summary = "Get execution metrics", description = "Retrieve performance metrics for a workflow execution")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Metrics retrieved successfully"),
@@ -108,7 +108,7 @@ public class ExecutionApiController {
         return ResponseEntity.ok(metrics);
     }
 
-    @GetMapping("/executions/{executionId}/bottlenecks")
+    @GetMapping(value = "/executions/{executionId}/bottlenecks", produces = "application/json")
     @Operation(summary = "Get execution bottlenecks", description = "Identify performance bottlenecks in a workflow execution")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Bottlenecks identified successfully"),
@@ -124,7 +124,7 @@ public class ExecutionApiController {
         return ResponseEntity.ok(bottlenecks);
     }
 
-    @PostMapping("/executions/{executionId}/rerun")
+    @PostMapping(value = "/executions/{executionId}/rerun", produces = "application/json")
     @Operation(summary = "Rerun execution", description = "Rerun a workflow execution, optionally from a specific node")
     @ApiResponses({
         @ApiResponse(responseCode = "202", description = "Execution rerun accepted"),
@@ -140,7 +140,7 @@ public class ExecutionApiController {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(result);
     }
 
-    @PostMapping("/executions/{executionId}/rerun-from-failed")
+    @PostMapping(value = "/executions/{executionId}/rerun-from-failed", produces = "application/json")
     @Operation(summary = "Rerun from failed node", description = "Rerun a workflow execution from the first failed node")
     @ApiResponses({
         @ApiResponse(responseCode = "202", description = "Execution rerun accepted"),
@@ -154,7 +154,7 @@ public class ExecutionApiController {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(result);
     }
 
-    @PostMapping("/executions/{executionId}/cancel")
+    @PostMapping(value = "/executions/{executionId}/cancel", produces = "application/json")
     @Operation(summary = "Cancel execution", description = "Cancel an ongoing workflow execution")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Execution cancelled successfully"),
@@ -168,7 +168,7 @@ public class ExecutionApiController {
         return ResponseEntity.ok(result);
     }
 
-    @GetMapping("/executions/recent")
+    @GetMapping(value = "/executions/recent", produces = "application/json")
     @Operation(summary = "Get recent executions", description = "Retrieve the most recent workflow executions")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Recent executions retrieved successfully"),

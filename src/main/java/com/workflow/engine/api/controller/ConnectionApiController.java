@@ -23,7 +23,7 @@ public class ConnectionApiController {
     @Autowired
     private ConnectionApiService connectionApiService;
 
-    @GetMapping("/database-connections")
+    @GetMapping(value = "/database-connections", produces = "application/json")
     @Operation(summary = "List database connections", description = "Retrieve all configured database connections")
     @ApiResponse(responseCode = "200", description = "Database connections retrieved successfully")
     public ResponseEntity<List<DatabaseConnectionDto>> getAllDatabaseConnections() {
@@ -31,7 +31,7 @@ public class ConnectionApiController {
         return ResponseEntity.ok(connections);
     }
 
-    @PostMapping("/database-connections")
+    @PostMapping(value = "/database-connections", produces = "application/json")
     @Operation(summary = "Create database connection", description = "Create a new database connection configuration")
     @ApiResponses({
         @ApiResponse(responseCode = "201", description = "Database connection created successfully"),
@@ -43,7 +43,7 @@ public class ConnectionApiController {
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("id", id));
     }
 
-    @PutMapping("/database-connections/{id}")
+    @PutMapping(value = "/database-connections/{id}", produces = "application/json")
     @Operation(summary = "Update database connection", description = "Update an existing database connection configuration")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Database connection updated successfully"),
@@ -58,7 +58,7 @@ public class ConnectionApiController {
         return ResponseEntity.ok().build();
     }
 
-    @DeleteMapping("/database-connections/{id}")
+    @DeleteMapping(value = "/database-connections/{id}", produces = "application/json")
     @Operation(summary = "Delete database connection", description = "Delete a database connection configuration")
     @ApiResponses({
         @ApiResponse(responseCode = "204", description = "Database connection deleted successfully"),
@@ -72,7 +72,7 @@ public class ConnectionApiController {
         return ResponseEntity.noContent().build();
     }
 
-    @PostMapping("/test-db-connection/{id}")
+    @PostMapping(value = "/test-db-connection/{id}", produces = "application/json")
     @Operation(summary = "Test database connection", description = "Test the connectivity of a database connection")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Connection test result"),
@@ -86,7 +86,7 @@ public class ConnectionApiController {
         return ResponseEntity.ok(result);
     }
 
-    @GetMapping("/kafka-connections")
+    @GetMapping(value = "/kafka-connections", produces = "application/json")
     @Operation(summary = "List Kafka connections", description = "Retrieve all configured Kafka connections")
     @ApiResponse(responseCode = "200", description = "Kafka connections retrieved successfully")
     public ResponseEntity<List<KafkaConnectionDto>> getAllKafkaConnections() {
@@ -94,7 +94,7 @@ public class ConnectionApiController {
         return ResponseEntity.ok(connections);
     }
 
-    @PostMapping("/kafka-connections")
+    @PostMapping(value = "/kafka-connections", produces = "application/json")
     @Operation(summary = "Create Kafka connection", description = "Create a new Kafka connection configuration")
     @ApiResponses({
         @ApiResponse(responseCode = "201", description = "Kafka connection created successfully"),
@@ -106,7 +106,7 @@ public class ConnectionApiController {
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("id", id));
     }
 
-    @PutMapping("/kafka-connections/{id}")
+    @PutMapping(value = "/kafka-connections/{id}", produces = "application/json")
     @Operation(summary = "Update Kafka connection", description = "Update an existing Kafka connection configuration")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Kafka connection updated successfully"),
@@ -121,7 +121,7 @@ public class ConnectionApiController {
         return ResponseEntity.ok().build();
     }
 
-    @DeleteMapping("/kafka-connections/{id}")
+    @DeleteMapping(value = "/kafka-connections/{id}", produces = "application/json")
     @Operation(summary = "Delete Kafka connection", description = "Delete a Kafka connection configuration")
     @ApiResponses({
         @ApiResponse(responseCode = "204", description = "Kafka connection deleted successfully"),
@@ -135,7 +135,7 @@ public class ConnectionApiController {
         return ResponseEntity.noContent().build();
     }
 
-    @PostMapping("/test-kafka-connection/{id}")
+    @PostMapping(value = "/test-kafka-connection/{id}", produces = "application/json")
     @Operation(summary = "Test Kafka connection", description = "Test the connectivity of a Kafka connection")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Connection test result"),

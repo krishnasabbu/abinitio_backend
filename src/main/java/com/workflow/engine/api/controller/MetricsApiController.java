@@ -19,7 +19,7 @@ public class MetricsApiController {
     @Autowired
     private MetricsApiService metricsApiService;
 
-    @GetMapping("/metrics/system/resources")
+    @GetMapping(value = "/metrics/system/resources", produces = "application/json")
     @Operation(summary = "Get system resources", description = "Retrieve current system resource utilization metrics")
     @ApiResponse(responseCode = "200", description = "System resources retrieved successfully")
     public ResponseEntity<Map<String, Object>> getSystemResources() {
@@ -27,7 +27,7 @@ public class MetricsApiController {
         return ResponseEntity.ok(resources);
     }
 
-    @GetMapping("/metrics/system/timeseries")
+    @GetMapping(value = "/metrics/system/timeseries", produces = "application/json")
     @Operation(summary = "Get system timeseries metrics", description = "Retrieve system metrics over a time period")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Timeseries metrics retrieved successfully"),
@@ -41,7 +41,7 @@ public class MetricsApiController {
         return ResponseEntity.ok(timeseries);
     }
 
-    @GetMapping("/metrics/executions/{executionId}/resources")
+    @GetMapping(value = "/metrics/executions/{executionId}/resources", produces = "application/json")
     @Operation(summary = "Get execution resources", description = "Retrieve resource utilization metrics for a specific execution")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Execution resources retrieved successfully"),
@@ -55,7 +55,7 @@ public class MetricsApiController {
         return ResponseEntity.ok(resources);
     }
 
-    @GetMapping("/metrics/nodes/{executionId}/{nodeId}/resources")
+    @GetMapping(value = "/metrics/nodes/{executionId}/{nodeId}/resources", produces = "application/json")
     @Operation(summary = "Get node resources", description = "Retrieve resource utilization metrics for a specific node")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Node resources retrieved successfully"),
@@ -71,7 +71,7 @@ public class MetricsApiController {
         return ResponseEntity.ok(resources);
     }
 
-    @GetMapping("/metrics/execution-modes")
+    @GetMapping(value = "/metrics/execution-modes", produces = "application/json")
     @Operation(summary = "Get execution modes metrics", description = "Retrieve metrics grouped by execution mode")
     @ApiResponse(responseCode = "200", description = "Execution modes metrics retrieved successfully")
     public ResponseEntity<Map<String, Object>> getExecutionModes() {
@@ -79,7 +79,7 @@ public class MetricsApiController {
         return ResponseEntity.ok(modes);
     }
 
-    @GetMapping("/metrics/system/overview")
+    @GetMapping(value = "/metrics/system/overview", produces = "application/json")
     @Operation(summary = "Get system overview", description = "Retrieve a comprehensive system overview")
     @ApiResponse(responseCode = "200", description = "System overview retrieved successfully")
     public ResponseEntity<Map<String, Object>> getSystemOverview() {
@@ -87,7 +87,7 @@ public class MetricsApiController {
         return ResponseEntity.ok(overview);
     }
 
-    @GetMapping("/metrics/executions/trends")
+    @GetMapping(value = "/metrics/executions/trends", produces = "application/json")
     @Operation(summary = "Get execution trends", description = "Retrieve execution trends over time")
     @ApiResponse(responseCode = "200", description = "Execution trends retrieved successfully")
     public ResponseEntity<Map<String, Object>> getExecutionTrends() {
@@ -95,7 +95,7 @@ public class MetricsApiController {
         return ResponseEntity.ok(trends);
     }
 
-    @GetMapping("/metrics/executions/heatmap")
+    @GetMapping(value = "/metrics/executions/heatmap", produces = "application/json")
     @Operation(summary = "Get execution heatmap", description = "Retrieve execution heatmap data for visualization")
     @ApiResponse(responseCode = "200", description = "Execution heatmap retrieved successfully")
     public ResponseEntity<Map<String, Object>> getExecutionHeatmap() {
@@ -103,7 +103,7 @@ public class MetricsApiController {
         return ResponseEntity.ok(heatmap);
     }
 
-    @GetMapping("/metrics/insights")
+    @GetMapping(value = "/metrics/insights", produces = "application/json")
     @Operation(summary = "Get system insights", description = "Retrieve AI-powered insights about system performance")
     @ApiResponse(responseCode = "200", description = "System insights retrieved successfully")
     public ResponseEntity<Map<String, Object>> getSystemInsights() {

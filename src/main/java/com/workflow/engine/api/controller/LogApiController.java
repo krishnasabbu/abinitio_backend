@@ -19,7 +19,7 @@ public class LogApiController {
     @Autowired
     private LogApiService logApiService;
 
-    @GetMapping("/logs/executions")
+    @GetMapping(value = "/logs/executions", produces = "application/json")
     @Operation(summary = "List execution logs", description = "Retrieve a list of all execution logs")
     @ApiResponse(responseCode = "200", description = "Execution logs retrieved successfully")
     public ResponseEntity<Map<String, Object>> listExecutionLogs() {
@@ -27,7 +27,7 @@ public class LogApiController {
         return ResponseEntity.ok(logs);
     }
 
-    @GetMapping("/logs/executions/{executionId}")
+    @GetMapping(value = "/logs/executions/{executionId}", produces = "application/json")
     @Operation(summary = "Get execution logs", description = "Retrieve detailed logs for a specific execution with filtering options")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Execution logs retrieved successfully"),
@@ -55,7 +55,7 @@ public class LogApiController {
         return ResponseEntity.ok(logs);
     }
 
-    @GetMapping("/logs/nodes/{executionId}/{nodeId}")
+    @GetMapping(value = "/logs/nodes/{executionId}/{nodeId}", produces = "application/json")
     @Operation(summary = "Get node logs", description = "Retrieve logs for a specific node in an execution")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Node logs retrieved successfully"),
@@ -75,7 +75,7 @@ public class LogApiController {
         return ResponseEntity.ok(logs);
     }
 
-    @GetMapping("/logs/search")
+    @GetMapping(value = "/logs/search", produces = "application/json")
     @Operation(summary = "Search logs", description = "Search logs across executions with various filters")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Search results retrieved successfully"),
@@ -99,7 +99,7 @@ public class LogApiController {
         return ResponseEntity.ok(results);
     }
 
-    @GetMapping("/logs/summary/{executionId}")
+    @GetMapping(value = "/logs/summary/{executionId}", produces = "application/json")
     @Operation(summary = "Get log summary", description = "Retrieve a summary of logs for an execution")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Log summary retrieved successfully"),
@@ -113,7 +113,7 @@ public class LogApiController {
         return ResponseEntity.ok(summary);
     }
 
-    @GetMapping("/analytics/execution-logs/{executionId}")
+    @GetMapping(value = "/analytics/execution-logs/{executionId}", produces = "application/json")
     @Operation(summary = "Get analytics execution logs", description = "Retrieve execution logs formatted for analytics")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Analytics logs retrieved successfully"),
@@ -129,7 +129,7 @@ public class LogApiController {
         return ResponseEntity.ok(logs);
     }
 
-    @GetMapping("/analytics/logs/{executionId}")
+    @GetMapping(value = "/analytics/logs/{executionId}", produces = "application/json")
     @Operation(summary = "Get log analysis", description = "Retrieve analyzed logs with insights for an execution")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Log analysis retrieved successfully"),
