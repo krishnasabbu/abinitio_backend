@@ -196,6 +196,8 @@ public class WorkflowExecutionService {
 
         WorkflowExecutionResponseDto response = buildExecutionResponse(execution, workflow, executionId);
 
+        persistExecutionResult(execution, executionId, response);
+
         if (execution.getStatus() == BatchStatus.COMPLETED) {
             log.info("workflowId={}, Workflow executed successfully!", workflow.getId());
             logStepExecutions(execution, workflow.getId());
@@ -315,6 +317,106 @@ public class WorkflowExecutionService {
         }
 
         return response;
+    }
+
+    private void persistExecutionResult(JobExecution jobExecution, String executionId, WorkflowExecutionResponseDto response) {
+        try {
+            long endTime = response.getEndTime() != null ? response.getEndTime() : System.currentTimeMillis();
+            String status = mapBatchStatusToExecutionStatus(jobExecution.getStatus().toString());
+
+            String errorMessage = null;
+            if (jobExecution.getFailureExceptions() != null && !jobExecution.getFailureExceptions().isEmpty()) {
+                errorMessage = jobExecution.getFailureExceptions().get(0).getMessage();
+            }
+
+            String updateSql = "UPDATE workflow_executions SET status = ?, end_time = ?, " +
+                    "completed_nodes = ?, successful_nodes = ?, failed_nodes = ?, " +
+                    "total_records = ?, total_execution_time_ms = ?" +
+                    (errorMessage != null ? ", error_message = ? " : " ") +
+                    "WHERE execution_id = ?";
+
+            long totalRecords = 0;
+            for (StepExecution step : jobExecution.getStepExecutions()) {
+                totalRecords += step.getReadCount();
+            }
+
+            int rowsUpdated;
+            if (errorMessage != null) {
+                rowsUpdated = jdbcTemplate.update(updateSql, status, endTime,
+                        response.getCompletedNodes(), response.getSuccessfulNodes(), response.getFailedNodes(),
+                        totalRecords, response.getExecutionTimeMs(), errorMessage, executionId);
+            } else {
+                rowsUpdated = jdbcTemplate.update(updateSql, status, endTime,
+                        response.getCompletedNodes(), response.getSuccessfulNodes(), response.getFailedNodes(),
+                        totalRecords, response.getExecutionTimeMs(), executionId);
+            }
+
+            log.info("Updated workflow_executions: executionId={}, status={}, rows={}", executionId, status, rowsUpdated);
+
+            persistNodeExecutions(jobExecution, executionId);
+
+        } catch (Exception e) {
+            log.error("Error persisting execution result for executionId={}: {}", executionId, e.getMessage(), e);
+        }
+    }
+
+    private void persistNodeExecutions(JobExecution jobExecution, String executionId) {
+        for (StepExecution stepExecution : jobExecution.getStepExecutions()) {
+            try {
+                String nodeId = stepExecution.getStepName();
+                String status = mapBatchStatusToExecutionStatus(stepExecution.getStatus().toString());
+
+                long startTime = stepExecution.getStartTime() != null ?
+                        stepExecution.getStartTime().toInstant(ZoneOffset.UTC).toEpochMilli() : System.currentTimeMillis();
+                long endTime = stepExecution.getEndTime() != null ?
+                        stepExecution.getEndTime().toInstant(ZoneOffset.UTC).toEpochMilli() : System.currentTimeMillis();
+                long executionTimeMs = endTime - startTime;
+
+                String errorMessage = null;
+                if (stepExecution.getFailureExceptions() != null && !stepExecution.getFailureExceptions().isEmpty()) {
+                    errorMessage = stepExecution.getFailureExceptions().get(0).getMessage();
+                }
+
+                String checkSql = "SELECT COUNT(*) FROM node_executions WHERE execution_id = ? AND node_id = ?";
+                Integer existingCount = jdbcTemplate.queryForObject(checkSql, Integer.class, executionId, nodeId);
+
+                if (existingCount != null && existingCount > 0) {
+                    String updateSql = "UPDATE node_executions SET status = ?, end_time = ?, " +
+                            "execution_time_ms = ?, records_processed = ?" +
+                            (errorMessage != null ? ", error_message = ? " : " ") +
+                            "WHERE execution_id = ? AND node_id = ?";
+
+                    if (errorMessage != null) {
+                        jdbcTemplate.update(updateSql, status, endTime, executionTimeMs,
+                                stepExecution.getReadCount(), errorMessage, executionId, nodeId);
+                    } else {
+                        jdbcTemplate.update(updateSql, status, endTime, executionTimeMs,
+                                stepExecution.getReadCount(), executionId, nodeId);
+                    }
+                } else {
+                    String insertSql = "INSERT INTO node_executions (id, execution_id, node_id, node_label, node_type, " +
+                            "status, start_time, end_time, execution_time_ms, records_processed, error_message) " +
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+                    String id = UUID.randomUUID().toString();
+                    jdbcTemplate.update(insertSql, id, executionId, nodeId, nodeId, "step",
+                            status, startTime, endTime, executionTimeMs, stepExecution.getReadCount(), errorMessage);
+                }
+
+                log.debug("Persisted node execution: executionId={}, nodeId={}, status={}", executionId, nodeId, status);
+            } catch (Exception e) {
+                log.error("Error persisting node execution for node {}: {}", stepExecution.getStepName(), e.getMessage());
+            }
+        }
+    }
+
+    private String mapBatchStatusToExecutionStatus(String batchStatus) {
+        return switch (batchStatus) {
+            case "COMPLETED" -> "success";
+            case "FAILED" -> "failed";
+            case "STOPPED" -> "cancelled";
+            default -> "running";
+        };
     }
 
     /**
