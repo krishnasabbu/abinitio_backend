@@ -28,7 +28,7 @@ dependencies {
     implementation 'com.fasterxml.jackson.core:jackson-databind'
     implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml'
     implementation 'org.apache.kafka:kafka-clients:3.6.0'
-    implementation 'org.springframework.expression:spring-expression'
+    implementation 'org.springframework:spring-expression'
 
     runtimeOnly 'com.h2database:h2'
 
