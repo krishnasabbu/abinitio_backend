@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.Chunk;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -77,9 +78,13 @@ public class RestAPISourceExecutor implements NodeExecutor<Map<String, Object>, 
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
-        return items -> {
+        return chunk -> {
+            List<Map<String, Object>> items = new ArrayList<>();
+            for (Map<String, Object> item : chunk) {
+                items.add(item);
+            }
             logger.debug("Writing {} items to context", items.size());
-            context.setVariable("outputItems", new ArrayList<>(items));
+            context.setVariable("outputItems", items);
         };
     }
 

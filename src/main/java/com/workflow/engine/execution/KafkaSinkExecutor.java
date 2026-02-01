@@ -55,7 +55,6 @@ public class KafkaSinkExecutor implements NodeExecutor<Map<String, Object>, Map<
         String compressionType = config.has("compressionType") ? config.get("compressionType").asText() : "none";
 
         return chunk -> {
-            List<Map<String, Object>> items = chunk.getItems();
             Properties props = new Properties();
             props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
             props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
@@ -63,7 +62,7 @@ public class KafkaSinkExecutor implements NodeExecutor<Map<String, Object>, Map<
             props.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, compressionType);
 
             try (KafkaProducer<String, String> producer = new KafkaProducer<>(props)) {
-                for (Map<String, Object> item : items) {
+                for (Map<String, Object> item : chunk) {
                     String key = null;
                     if (keyField != null) {
                         Object keyValue = item.get(keyField);
@@ -96,7 +95,11 @@ public class KafkaSinkExecutor implements NodeExecutor<Map<String, Object>, Map<
                 throw new RuntimeException("KafkaSink failed", e);
             }
 
-            context.setVariable("outputItems", new ArrayList<>(items));
+            List<Map<String, Object>> outputItems = new ArrayList<>();
+            for (Map<String, Object> item : chunk) {
+                outputItems.add(item);
+            }
+            context.setVariable("outputItems", outputItems);
         };
     }
 
