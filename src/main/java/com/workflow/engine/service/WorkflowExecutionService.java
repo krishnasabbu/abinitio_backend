@@ -15,6 +15,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -233,16 +234,16 @@ public class WorkflowExecutionService {
         response.setStatus(jobExecution.getStatus().toString());
 
         if (jobExecution.getStartTime() != null) {
-            response.setStartTime(jobExecution.getStartTime().getTime());
+            response.setStartTime(jobExecution.getStartTime().toInstant(ZoneOffset.UTC).toEpochMilli());
         }
         if (jobExecution.getEndTime() != null) {
-            response.setEndTime(jobExecution.getEndTime().getTime());
+            response.setEndTime(jobExecution.getEndTime().toInstant(ZoneOffset.UTC).toEpochMilli());
         }
 
         if (jobExecution.getStartTime() != null && jobExecution.getEndTime() != null) {
             long durationMillis = Duration.between(
-                jobExecution.getStartTime().toInstant(),
-                jobExecution.getEndTime().toInstant()
+                    jobExecution.getStartTime().toInstant(ZoneOffset.UTC),
+                    jobExecution.getEndTime().toInstant(ZoneOffset.UTC)
             ).toMillis();
             response.setExecutionTimeMs(durationMillis);
         }
@@ -257,17 +258,17 @@ public class WorkflowExecutionService {
             nodeStatus.setNodeName(stepExecution.getStepName());
             nodeStatus.setStatus(stepExecution.getStatus().toString());
 
-            if (stepExecution.getStartTime() != null) {
-                nodeStatus.setStartTime(stepExecution.getStartTime().getTime());
+            if (jobExecution.getStartTime() != null) {
+                nodeStatus.setStartTime(jobExecution.getStartTime().toInstant(ZoneOffset.UTC).toEpochMilli());
             }
-            if (stepExecution.getEndTime() != null) {
-                nodeStatus.setEndTime(stepExecution.getEndTime().getTime());
+            if (jobExecution.getEndTime() != null) {
+                nodeStatus.setEndTime(jobExecution.getEndTime().toInstant(ZoneOffset.UTC).toEpochMilli());
             }
 
-            if (stepExecution.getStartTime() != null && stepExecution.getEndTime() != null) {
+            if (jobExecution.getStartTime() != null && jobExecution.getEndTime() != null) {
                 long durationMillis = Duration.between(
-                    stepExecution.getStartTime().toInstant(),
-                    stepExecution.getEndTime().toInstant()
+                        jobExecution.getStartTime().toInstant(ZoneOffset.UTC),
+                        jobExecution.getEndTime().toInstant(ZoneOffset.UTC)
                 ).toMillis();
                 nodeStatus.setExecutionTimeMs(durationMillis);
             }
