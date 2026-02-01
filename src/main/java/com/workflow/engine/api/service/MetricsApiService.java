@@ -278,6 +278,53 @@ public class MetricsApiService {
         overview.put("avg_throughput", 10.5);
         overview.put("active_nodes", 12);
 
+        try {
+            Map<String, Object> executionModes = new HashMap<>();
+            Integer batchCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM workflow_executions WHERE execution_mode = 'batch' OR execution_mode IS NULL",
+                    Integer.class);
+            executionModes.put("batch", batchCount != null ? batchCount : 0);
+            executionModes.put("python", 0);
+            executionModes.put("parallel", 0);
+            executionModes.put("pyspark", 0);
+            overview.put("execution_modes", executionModes);
+        } catch (Exception e) {
+            Map<String, Object> executionModes = new HashMap<>();
+            executionModes.put("batch", 0);
+            executionModes.put("python", 0);
+            executionModes.put("parallel", 0);
+            executionModes.put("pyspark", 0);
+            overview.put("execution_modes", executionModes);
+        }
+
+        try {
+            Map<String, Object> statusDistribution = new HashMap<>();
+            Integer successCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM workflow_executions WHERE status = 'success'",
+                    Integer.class);
+            Integer failedCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM workflow_executions WHERE status = 'failed'",
+                    Integer.class);
+            Integer runningCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM workflow_executions WHERE status = 'running'",
+                    Integer.class);
+            Integer pendingCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM workflow_executions WHERE status = 'pending'",
+                    Integer.class);
+            statusDistribution.put("success", successCount != null ? successCount : 0);
+            statusDistribution.put("failed", failedCount != null ? failedCount : 0);
+            statusDistribution.put("running", runningCount != null ? runningCount : 0);
+            statusDistribution.put("pending", pendingCount != null ? pendingCount : 0);
+            overview.put("status_distribution", statusDistribution);
+        } catch (Exception e) {
+            Map<String, Object> statusDistribution = new HashMap<>();
+            statusDistribution.put("success", 0);
+            statusDistribution.put("failed", 0);
+            statusDistribution.put("running", 0);
+            statusDistribution.put("pending", 0);
+            overview.put("status_distribution", statusDistribution);
+        }
+
         return overview;
     }
 
