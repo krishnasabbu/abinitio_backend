@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import com.workflow.engine.api.util.TimestampConverter;
 import java.lang.management.ManagementFactory;
 import java.lang.management.OperatingSystemMXBean;
 import java.lang.management.MemoryMXBean;
@@ -51,7 +52,7 @@ public class MetricsApiService {
         );
 
         return Map.of(
-                "timestamp", System.currentTimeMillis(),
+                "timestamp", TimestampConverter.toISO8601(System.currentTimeMillis()),
                 "cpu", cpu,
                 "memory", memory,
                 "disk", disk,
@@ -160,7 +161,7 @@ public class MetricsApiService {
         for (Map<String, Object> mode : modes) {
             long total = ((Number) mode.get("total_executions")).longValue();
             long successful = ((Number) mode.getOrDefault("successful", 0)).longValue();
-            double successRate = total > 0 ? (successful * 100.0) / total : 0;
+            double successRate = total > 0 ? (double) successful / total : 0.0;
             mode.put("success_rate", successRate);
             mode.put("avg_workers", 4);
         }
@@ -188,7 +189,7 @@ public class MetricsApiService {
         for (int i = 6; i >= 0; i--) {
             long timestamp = System.currentTimeMillis() - (i * 86400000L);
             trends.add(Map.of(
-                    "date", new java.util.Date(timestamp),
+                    "date", TimestampConverter.toISO8601(timestamp),
                     "count", (int) (Math.random() * 50) + 10,
                     "success_rate", 0.90 + Math.random() * 0.08
             ));

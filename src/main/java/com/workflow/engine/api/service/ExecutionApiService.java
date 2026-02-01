@@ -206,7 +206,6 @@ public class ExecutionApiService {
             String sql = "SELECT id, execution_id, node_id, node_label, node_type, status, start_time, end_time, execution_time_ms, records_processed, input_records, output_records, input_bytes, output_bytes, queue_wait_time_ms, depth_in_dag, retry_count, error_message FROM node_executions WHERE execution_id = ? ORDER BY start_time ASC";
             List<NodeExecutionDto> result = jdbcTemplate.query(sql, new Object[]{executionId}, (rs, rowNum) -> {
                 NodeExecutionDto dto = new NodeExecutionDto();
-                dto.setId(rs.getString("id"));
                 dto.setExecutionId(rs.getString("execution_id"));
                 dto.setNodeId(rs.getString("node_id"));
                 dto.setNodeLabel(rs.getString("node_label"));
@@ -498,12 +497,12 @@ public class ExecutionApiService {
 
             launchWorkflowJob(executionPlan, newExecutionId, executionMode, workflowId);
 
-            return Map.of(
-                    "new_execution_id", newExecutionId,
-                    "status", "running",
-                    "message", message,
-                    "total_nodes", planSize
-            );
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "queued");
+            response.put("original_execution_id", executionId);
+            response.put("new_execution_id", newExecutionId);
+            response.put("from_node_id", fromNodeId);
+            return response;
 
         } catch (Exception e) {
             logger.error("Error rerunning execution {}", executionId, e);
@@ -552,13 +551,12 @@ public class ExecutionApiService {
             logger.info("Started restart from failed nodes for execution '{}', new execution '{}'",
                 executionId, newExecutionId);
 
-            return Map.of(
-                    "new_execution_id", newExecutionId,
-                    "original_execution_id", executionId,
-                    "status", "running",
-                    "message", "Restart from failed nodes started",
-                    "total_nodes", planSize
-            );
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "queued");
+            response.put("original_execution_id", executionId);
+            response.put("new_execution_id", newExecutionId);
+            response.put("from_node_id", null);
+            return response;
 
         } catch (Exception e) {
             logger.error("Error rerunning from failed for execution {}", executionId, e);
@@ -568,18 +566,33 @@ public class ExecutionApiService {
 
     public Map<String, Object> cancelExecution(String executionId) {
         try {
+            WorkflowExecutionDto execution = getExecutionById(executionId);
+            if (execution == null) {
+                return buildErrorResponse("Execution not found");
+            }
+
+            String currentStatus = execution.getStatus();
+            if ("success".equals(currentStatus) || "failed".equals(currentStatus) || "cancelled".equals(currentStatus)) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("status", "already_completed");
+                response.put("execution_id", executionId);
+                return response;
+            }
+
             String sql = "UPDATE workflow_executions SET status = ? WHERE execution_id = ? AND status = 'running'";
-            int updated = jdbcTemplate.update(sql, "cancel_requested", executionId);
+            int updated = jdbcTemplate.update(sql, "cancelled", executionId);
 
             if (updated > 0) {
-                // Log the cancellation request
                 String insertLogSql = "INSERT INTO execution_logs (timestamp, datetime, level, execution_id, message) " +
                         "VALUES (?, ?, ?, ?, ?)";
                 long timestamp = System.currentTimeMillis();
-                String datetime = java.time.Instant.ofEpochMilli(timestamp).toString();
-                jdbcTemplate.update(insertLogSql, timestamp, datetime, "INFO", executionId, "Execution cancellation requested");
+                String datetime = TimestampConverter.toISO8601(timestamp);
+                jdbcTemplate.update(insertLogSql, timestamp, datetime, "INFO", executionId, "Execution cancelled");
 
-                return Map.of("status", "cancel_requested", "message", "Execution cancellation requested");
+                Map<String, Object> response = new HashMap<>();
+                response.put("status", "success");
+                response.put("execution_id", executionId);
+                return response;
             } else {
                 return buildErrorResponse("Execution not found or not in running state");
             }
@@ -597,7 +610,6 @@ public class ExecutionApiService {
 
     private WorkflowExecutionDto mapExecutionDto(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
         WorkflowExecutionDto dto = new WorkflowExecutionDto();
-        dto.setId(rs.getString("id"));
         dto.setExecutionId(rs.getString("execution_id"));
         dto.setWorkflowName(rs.getString("workflow_name"));
         dto.setStatus(rs.getString("status"));

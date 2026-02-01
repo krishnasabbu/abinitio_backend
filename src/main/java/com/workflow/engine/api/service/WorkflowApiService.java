@@ -114,15 +114,35 @@ public class WorkflowApiService {
 
     public Map<String, Object> getWorkflowAnalytics(String workflowId) {
         String sql = "SELECT COUNT(*) AS total_executions, " +
-                "SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS successful, " +
-                "SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed, " +
+                "SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS successful_executions, " +
+                "SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_executions, " +
                 "AVG(total_execution_time_ms) AS avg_duration, " +
                 "MAX(total_execution_time_ms) AS max_duration, " +
                 "MIN(total_execution_time_ms) AS min_duration " +
                 "FROM workflow_executions WHERE workflow_id = ?";
 
-        List<Map<String, Object>> result = jdbcTemplate.queryForList(sql, workflowId);
-        return result.isEmpty() ? new HashMap<>() : result.get(0);
+        List<Map<String, Object>> queryResult = jdbcTemplate.queryForList(sql, workflowId);
+        if (queryResult.isEmpty()) {
+            return new HashMap<>();
+        }
+
+        Map<String, Object> row = queryResult.get(0);
+        Map<String, Object> result = new HashMap<>();
+
+        long totalExecutions = row.get("total_executions") != null ? ((Number) row.get("total_executions")).longValue() : 0;
+        long successfulExecutions = row.get("successful_executions") != null ? ((Number) row.get("successful_executions")).longValue() : 0;
+
+        result.put("total_executions", totalExecutions);
+        result.put("successful_executions", successfulExecutions);
+
+        double successRate = totalExecutions > 0 ? (double) successfulExecutions / totalExecutions : 0.0;
+        result.put("success_rate", successRate);
+
+        result.put("avg_duration", row.get("avg_duration"));
+        result.put("min_duration", row.get("min_duration"));
+        result.put("max_duration", row.get("max_duration"));
+
+        return result;
     }
 
     private String toJson(Object obj) {
