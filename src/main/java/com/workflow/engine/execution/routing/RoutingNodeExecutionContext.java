@@ -30,11 +30,11 @@ public class RoutingNodeExecutionContext extends NodeExecutionContext {
 
     private void handleOutputRouting(List<?> outputItems) {
         if (outputItems == null || outputItems.isEmpty()) {
-            logger.debug("No output items to route from node {}", nodeDefinition.getId());
+            logger.debug("No output items to route from node {}", getNodeDefinition().getId());
             return;
         }
 
-        logger.debug("Routing {} output items from node {}", outputItems.size(), nodeDefinition.getId());
+        logger.debug("Routing {} output items from node {}", outputItems.size(), getNodeDefinition().getId());
 
         for (Object item : outputItems) {
             if (item instanceof Map) {
