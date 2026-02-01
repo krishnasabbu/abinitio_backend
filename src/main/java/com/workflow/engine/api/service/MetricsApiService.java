@@ -185,16 +185,83 @@ public class MetricsApiService {
     }
 
     public Map<String, Object> getExecutionTrends() {
-        List<Map<String, Object>> trends = new ArrayList<>();
-        for (int i = 6; i >= 0; i--) {
-            long timestamp = System.currentTimeMillis() - (i * 86400000L);
-            trends.add(Map.of(
-                    "date", TimestampConverter.toISO8601(timestamp),
-                    "count", (int) (Math.random() * 50) + 10,
-                    "success_rate", 0.90 + Math.random() * 0.08
-            ));
+        List<Map<String, Object>> hourly = new ArrayList<>();
+        List<Map<String, Object>> daily = new ArrayList<>();
+
+        long now = System.currentTimeMillis();
+        long oneDayMs = 86400000L;
+        long oneHourMs = 3600000L;
+
+        for (int i = 23; i >= 0; i--) {
+            long hourStart = now - (i * oneHourMs);
+            long hourEnd = hourStart + oneHourMs;
+
+            String hourSql = "SELECT COUNT(*) as executions, " +
+                    "SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success, " +
+                    "SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed " +
+                    "FROM workflow_executions WHERE start_time >= ? AND start_time < ?";
+
+            try {
+                Map<String, Object> hourData = jdbcTemplate.queryForMap(hourSql, hourStart, hourEnd);
+                int executions = hourData.get("executions") != null ? ((Number) hourData.get("executions")).intValue() : 0;
+                int success = hourData.get("success") != null ? ((Number) hourData.get("success")).intValue() : 0;
+                int failed = hourData.get("failed") != null ? ((Number) hourData.get("failed")).intValue() : 0;
+
+                hourly.add(Map.of(
+                        "hour", TimestampConverter.toISO8601(hourStart),
+                        "executions", executions,
+                        "success", success,
+                        "failed", failed
+                ));
+            } catch (Exception e) {
+                hourly.add(Map.of(
+                        "hour", TimestampConverter.toISO8601(hourStart),
+                        "executions", 0,
+                        "success", 0,
+                        "failed", 0
+                ));
+            }
         }
-        return Map.of("trends", trends);
+
+        for (int i = 6; i >= 0; i--) {
+            long dayStart = now - (i * oneDayMs);
+            long dayEnd = dayStart + oneDayMs;
+
+            String daySql = "SELECT COUNT(*) as executions, " +
+                    "SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success, " +
+                    "SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed, " +
+                    "AVG(total_execution_time_ms) as avg_duration " +
+                    "FROM workflow_executions WHERE start_time >= ? AND start_time < ?";
+
+            try {
+                Map<String, Object> dayData = jdbcTemplate.queryForMap(daySql, dayStart, dayEnd);
+                int executions = dayData.get("executions") != null ? ((Number) dayData.get("executions")).intValue() : 0;
+                int success = dayData.get("success") != null ? ((Number) dayData.get("success")).intValue() : 0;
+                int failed = dayData.get("failed") != null ? ((Number) dayData.get("failed")).intValue() : 0;
+                long avgDuration = dayData.get("avg_duration") != null ? ((Number) dayData.get("avg_duration")).longValue() : 0;
+
+                daily.add(Map.of(
+                        "date", TimestampConverter.toISO8601(dayStart),
+                        "executions", executions,
+                        "success", success,
+                        "failed", failed,
+                        "avg_duration", avgDuration
+                ));
+            } catch (Exception e) {
+                daily.add(Map.of(
+                        "date", TimestampConverter.toISO8601(dayStart),
+                        "executions", 0,
+                        "success", 0,
+                        "failed", 0,
+                        "avg_duration", 0
+                ));
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("hourly", hourly);
+        result.put("daily", daily);
+        return result;
     }
 
     public Map<String, Object> getExecutionHeatmap() {
