@@ -42,10 +42,11 @@ public class LookupExecutor implements NodeExecutor<Map<String, Object>, Map<Str
 
         List<String> joinKeys = parseArray(joinKeysStr);
 
-        List<Map<String, Object>> lookupItems = (List<Map<String, Object>>) context.getVariable("lookupInputItems");
-        if (lookupItems == null) {
-            lookupItems = new ArrayList<>();
+        List<Map<String, Object>> tempLookupItems = (List<Map<String, Object>>) context.getVariable("lookupInputItems");
+        if (tempLookupItems == null) {
+            tempLookupItems = new ArrayList<>();
         }
+        final List<Map<String, Object>> lookupItems = tempLookupItems;
 
         Map<String, Map<String, Object>> lookupIndex = buildIndex(lookupItems, joinKeys);
 
