@@ -150,14 +150,7 @@ public class StepFactory {
                 .retry(Exception.class);
         }
 
-        if (policy.getAction() == FailureAction.SKIP_RECORD) {
-            chunkBuilder.faultTolerant()
-                .skipLimit(Integer.MAX_VALUE)
-                .skip(Exception.class)
-                .noSkip(NullPointerException.class);
-        }
-
-        if (policy.isSkipOnError()) {
+        if (policy.getAction() == FailureAction.SKIP || policy.isSkipOnError()) {
             chunkBuilder.faultTolerant()
                 .skipLimit(Integer.MAX_VALUE)
                 .skip(Exception.class);
