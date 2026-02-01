@@ -86,9 +86,9 @@ public class FilterExecutor implements NodeExecutor<Map<String, Object>, Map<Str
 
         return item -> {
             try {
-                StandardEvaluationContext evalContext = new StandardEvaluationContext();
+                Map<String, Object> itemWithConversions = new HashMap<>(item);
 
-                for (Map.Entry<String, Object> entry : item.entrySet()) {
+                for (Map.Entry<String, Object> entry : itemWithConversions.entrySet()) {
                     String key = entry.getKey();
                     Object value = entry.getValue();
 
@@ -97,10 +97,10 @@ public class FilterExecutor implements NodeExecutor<Map<String, Object>, Map<Str
                         try {
                             if (strValue.matches("-?\\d+(\\.\\d+)?")) {
                                 if (strValue.contains(".")) {
-                                    value = Double.parseDouble(strValue);
+                                    itemWithConversions.put(key, Double.parseDouble(strValue));
                                     logger.info("Converted {} from '{}' to double", key, strValue);
                                 } else {
-                                    value = Long.parseLong(strValue);
+                                    itemWithConversions.put(key, Long.parseLong(strValue));
                                     logger.info("Converted {} from '{}' to long", key, strValue);
                                 }
                             }
@@ -108,14 +108,20 @@ public class FilterExecutor implements NodeExecutor<Map<String, Object>, Map<Str
                             logger.warn("Failed to convert {} value '{}': {}", key, strValue, ex.getMessage());
                         }
                     }
-
-                    evalContext.setVariable(key, value);
                 }
 
-                Object result = parser.parseExpression(condition).getValue(evalContext);
+                StandardEvaluationContext evalContext = new StandardEvaluationContext();
+                for (Map.Entry<String, Object> entry : itemWithConversions.entrySet()) {
+                    evalContext.setVariable(entry.getKey(), entry.getValue());
+                }
+
+                String conditionWithHash = addHashPrefixToVariables(condition);
+                logger.info("Transformed condition from '{}' to '{}'", condition, conditionWithHash);
+
+                Object result = parser.parseExpression(conditionWithHash).getValue(evalContext);
 
                 boolean passed = result instanceof Boolean && (Boolean) result;
-                logger.info("Condition '{}' evaluated to {} for item: {}", condition, passed, item);
+                logger.info("Condition '{}' evaluated to {} for item: {}", conditionWithHash, passed, itemWithConversions);
 
                 if (isRouting) {
                     Map<String, Object> itemWithRoute = new HashMap<>(item);
@@ -141,6 +147,14 @@ public class FilterExecutor implements NodeExecutor<Map<String, Object>, Map<Str
                 return null;
             }
         };
+    }
+
+    private String addHashPrefixToVariables(String condition) {
+        String result = condition;
+        result = result.replaceAll("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*([><=!]+)", "#$1$2");
+        result = result.replaceAll("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*([\\(,])", "#$1$2");
+        result = result.replaceAll("\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\b", "(#$1");
+        return result;
     }
 
     @Override
