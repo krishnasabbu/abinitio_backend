@@ -145,21 +145,23 @@ public class DagUtils {
     /**
      * Finds all source nodes that are not the designated start node.
      *
-     * Source nodes are nodes with no incoming edges (in-degree 0). This method
-     * excludes the explicit "Start" node type from results.
+     * Source nodes are nodes with no incoming data edges (control edges from Start are ignored).
+     * This method excludes the explicit "Start" node type from results and only considers
+     * data edges (non-control edges) when determining if a node has incoming dependencies.
      *
      * @param workflow the workflow definition
      * @return list of source node IDs
      */
     public static List<String> findSourceNodes(WorkflowDefinition workflow) {
         logger.debug("Finding source nodes in workflow");
-        Set<String> targets = workflow.getEdges().stream()
+        Set<String> dataTargets = workflow.getEdges().stream()
+            .filter(e -> !e.isControl())
             .map(Edge::getTarget)
             .collect(Collectors.toSet());
 
         return workflow.getNodes().stream()
             .map(NodeDefinition::getId)
-            .filter(id -> !targets.contains(id))
+            .filter(id -> !dataTargets.contains(id))
             .filter(id -> !isStartNode(workflow, id))
             .collect(Collectors.toList());
     }
