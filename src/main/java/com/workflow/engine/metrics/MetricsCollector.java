@@ -4,6 +4,7 @@ import com.workflow.engine.model.MetricsConfig;
 import org.springframework.batch.core.StepExecution;
 import org.springframework.stereotype.Component;
 
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -26,9 +27,11 @@ public class MetricsCollector {
         if (config.isTrackExecutionTime()) {
             long executionTime = 0;
             if (stepExecution.getStartTime() != null && stepExecution.getEndTime() != null) {
-                executionTime = stepExecution.getEndTime().getTime() - stepExecution.getStartTime().getTime();
-                metrics.setStartTime(stepExecution.getStartTime().getTime());
-                metrics.setEndTime(stepExecution.getEndTime().getTime());
+                long startTimeMs = stepExecution.getStartTime().toInstant(ZoneOffset.UTC).toEpochMilli();
+                long endTimeMs = stepExecution.getEndTime().toInstant(ZoneOffset.UTC).toEpochMilli();
+                executionTime = endTimeMs - startTimeMs;
+                metrics.setStartTime(startTimeMs);
+                metrics.setEndTime(endTimeMs);
             }
             metrics.setExecutionTimeMs(executionTime);
         }

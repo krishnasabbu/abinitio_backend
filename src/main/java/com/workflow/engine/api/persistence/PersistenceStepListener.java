@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 public class PersistenceStepListener implements StepExecutionListener {
@@ -66,7 +67,7 @@ public class PersistenceStepListener implements StepExecutionListener {
             }
 
             long startTime = stepExecution.getStartTime() != null ?
-                    stepExecution.getStartTime().getTime() :
+                    stepExecution.getStartTime().toInstant(ZoneOffset.UTC).toEpochMilli() :
                     endTime;
             long executionTimeMs = endTime - startTime;
 
