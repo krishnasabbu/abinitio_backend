@@ -1,5 +1,6 @@
 package com.workflow.engine.graph;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.workflow.engine.execution.routing.OutputPort;
 import com.workflow.engine.execution.NodeExecutorRegistry;
 import com.workflow.engine.model.*;
@@ -62,6 +63,10 @@ public class ExecutionGraphBuilder {
                 continue;
             }
 
+            JsonNode resolvedConfig = node.getResolvedConfig();
+            logger.debug("[COMPILER] Node {} type={} config resolved={}",
+                node.getId(), node.getType(), resolvedConfig != null && !resolvedConfig.isNull());
+
             StepClassification classification = classifyNode(node, dataAdjacency, edges);
 
             List<String> nextSteps = determineNextSteps(node.getId(), dataAdjacency, controlAdjacency, classification);
@@ -107,7 +112,7 @@ public class ExecutionGraphBuilder {
             StepNode stepNode = new StepNode(
                 node.getId(),
                 node.getType(),
-                node.getConfig(),
+                node.getResolvedConfig(),
                 nextSteps,
                 errorSteps,
                 node.getMetrics() != null ? node.getMetrics() : new MetricsConfig(),

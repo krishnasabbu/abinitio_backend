@@ -1,5 +1,7 @@
 package com.workflow.engine.model;
 
+import com.fasterxml.jackson.annotation.JsonAnySetter;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.Data;
 
@@ -14,6 +16,7 @@ import lombok.Data;
  * - id: Unique identifier for this node within the workflow
  * - type: Node type determining which executor implementation handles this node
  * - config: JSON configuration specific to this node type (executor-dependent)
+ * - data: Optional nested data object (supports frontend UI workflows with data.config nesting)
  * - executionHints: Optional hints for execution planning (parallelism, distribution, etc.)
  * - metrics: Optional metrics collection configuration for this node
  * - onFailure: Failure handling policy (stop, skip, retry, etc.)
@@ -34,6 +37,9 @@ public class NodeDefinition {
     /** Executor-specific configuration as JSON */
     private JsonNode config;
 
+    /** Optional nested data object (for workflows with data.config structure) */
+    private JsonNode data;
+
     /** Optional execution hints for planning and optimization */
     private ExecutionHints executionHints;
 
@@ -42,4 +48,28 @@ public class NodeDefinition {
 
     /** Failure handling policy for this node */
     private FailurePolicy onFailure;
+
+    @JsonAnySetter
+    private void handleUnknownProperty(String key, JsonNode value) {
+        if ("data".equals(key) && value != null && value.has("config")) {
+            this.data = value;
+            if (this.config == null) {
+                this.config = value.get("config");
+            }
+        }
+    }
+
+    public JsonNode getResolvedConfig() {
+        if (this.config != null) {
+            return this.config;
+        }
+        if (this.data != null && this.data.has("config")) {
+            return this.data.get("config");
+        }
+        return null;
+    }
+
+    public void setConfig(JsonNode config) {
+        this.config = config;
+    }
 }
