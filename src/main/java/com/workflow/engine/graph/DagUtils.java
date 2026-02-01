@@ -143,6 +143,19 @@ public class DagUtils {
     }
 
     /**
+     * Determines if an edge is a control edge.
+     *
+     * Checks both the isControl flag and the edge type for robustness.
+     * This handles cases where deserialization may not properly populate the isControl flag.
+     *
+     * @param edge the edge to check
+     * @return true if the edge is a control edge, false if it's a data edge
+     */
+    private static boolean isControlEdge(Edge edge) {
+        return edge.isControl() || "control".equalsIgnoreCase(edge.getType());
+    }
+
+    /**
      * Finds all source nodes that are not the designated start node.
      *
      * Source nodes are nodes with no incoming data edges (control edges from Start are ignored).
@@ -157,7 +170,7 @@ public class DagUtils {
 
         List<Edge> edges = workflow.getEdges() != null ? workflow.getEdges() : new ArrayList<>();
         Set<String> dataTargets = edges.stream()
-            .filter(e -> !e.isControl())
+            .filter(e -> !isControlEdge(e))
             .map(Edge::getTarget)
             .collect(Collectors.toSet());
 

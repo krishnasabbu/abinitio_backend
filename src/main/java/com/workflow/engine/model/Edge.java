@@ -1,5 +1,6 @@
 package com.workflow.engine.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
 /**
@@ -41,6 +42,18 @@ public class Edge {
     /** Optional port/handle identifier on the target node for multi-port scenarios */
     private String targetHandle;
 
+    /** Edge type: "control" for control flow edges, "data" for data flow edges */
+    private String type;
+
     /** True if this is a control flow edge, false if it's a data flow edge */
-    private boolean isControl;
+    @JsonProperty("isControl")
+    private boolean control;
+
+    public boolean isControl() {
+        return control;
+    }
+
+    public void setIsControl(boolean control) {
+        this.control = control;
+    }
 }
