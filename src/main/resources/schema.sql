@@ -183,6 +183,5 @@ CREATE TABLE IF NOT EXISTS system_status (
 );
 
 -- Insert default system status
-INSERT INTO system_status (id, engine_status, scheduler_status, timestamp, last_heartbeat, supported_modes)
-VALUES (1, 'running', 'active', 0, 0, 'python,parallel,pyspark')
-ON CONFLICT DO NOTHING;
+MERGE INTO system_status (id, engine_status, scheduler_status, timestamp, last_heartbeat, supported_modes)
+VALUES (1, 'running', 'active', 0, 0, 'python,parallel,pyspark');
