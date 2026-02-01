@@ -7,6 +7,7 @@ import com.workflow.engine.graph.StepNode;
 import com.workflow.engine.model.ExecutionMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.job.builder.FlowBuilder;
@@ -71,6 +72,7 @@ public class DynamicJobBuilder {
     private final JobRepository jobRepository;
     private final PlatformTransactionManager transactionManager;
     private final TaskExecutor workflowTaskExecutor;
+    private final ExecutionPlanValidator.ValidationConfig validationConfig;
 
     @Value("${workflow.job.restartable:true}")
     private boolean restartable;
@@ -83,13 +85,17 @@ public class DynamicJobBuilder {
             StepFactory stepFactory,
             JobRepository jobRepository,
             PlatformTransactionManager transactionManager,
-            @Qualifier("workflowTaskExecutor") @Autowired(required = false) TaskExecutor workflowTaskExecutor) {
+            @Qualifier("workflowTaskExecutor") @Autowired(required = false) TaskExecutor workflowTaskExecutor,
+            @Autowired(required = false) ExecutionPlanValidator.ValidationConfig validationConfig) {
         this.stepFactory = stepFactory;
         this.jobRepository = jobRepository;
         this.transactionManager = transactionManager;
         this.workflowTaskExecutor = workflowTaskExecutor != null
             ? workflowTaskExecutor
             : createDefaultTaskExecutor();
+        this.validationConfig = validationConfig != null
+            ? validationConfig
+            : ExecutionPlanValidator.ValidationConfig.defaults();
     }
 
     private TaskExecutor createDefaultTaskExecutor() {
@@ -111,32 +117,70 @@ public class DynamicJobBuilder {
     public Job buildJob(ExecutionPlan plan, String workflowId) {
         Objects.requireNonNull(plan, "ExecutionPlan cannot be null");
 
-        ExecutionPlanValidator.validate(plan);
+        ExecutionPlanValidator.validate(plan, validationConfig);
 
         String effectiveWorkflowId = workflowId != null ? workflowId : plan.workflowId();
         String jobName = determineJobName(effectiveWorkflowId);
-        logger.info("Building job '{}' with {} steps, {} entry points",
-            jobName, plan.steps().size(), plan.entryStepIds().size());
 
-        BuildContext ctx = new BuildContext(plan, jobName);
+        MDC.put("workflowId", effectiveWorkflowId);
+        MDC.put("jobName", jobName);
 
-        validateForkJoinStructure(ctx);
-        buildAllSteps(ctx);
+        try {
+            logger.info("[GRAPH] Building job '{}' with {} steps, {} entry points",
+                jobName, plan.steps().size(), plan.entryStepIds().size());
 
-        Flow mainFlow = buildMainFlow(ctx);
+            logGraphStructure(plan);
 
-        JobBuilder jobBuilder = new JobBuilder(jobName, jobRepository)
-            .incrementer(new RunIdIncrementer())
-            .start(mainFlow)
-            .end();
+            BuildContext ctx = new BuildContext(plan, jobName);
 
-        if (!restartable) {
-            jobBuilder.preventRestart();
+            validateForkJoinStructure(ctx);
+            buildAllSteps(ctx);
+
+            Flow mainFlow = buildMainFlow(ctx);
+
+            JobBuilder jobBuilder = new JobBuilder(jobName, jobRepository)
+                .incrementer(new RunIdIncrementer())
+                .start(mainFlow)
+                .end();
+
+            if (!restartable) {
+                jobBuilder.preventRestart();
+            }
+
+            Job job = jobBuilder.build();
+            logger.info("[GRAPH] Built job '{}' successfully", jobName);
+            return job;
+        } finally {
+            MDC.remove("workflowId");
+            MDC.remove("jobName");
         }
+    }
 
-        Job job = jobBuilder.build();
-        logger.info("Built job '{}' successfully", jobName);
-        return job;
+    private void logGraphStructure(ExecutionPlan plan) {
+        logger.info("[GRAPH] Entry points: {}", plan.entryStepIds());
+
+        for (Map.Entry<String, StepNode> entry : plan.steps().entrySet()) {
+            StepNode node = entry.getValue();
+            String nodeId = entry.getKey();
+
+            if (node.isFork()) {
+                String joinNodeId = node.executionHints() != null ? node.executionHints().getJoinNodeId() : "NOT_SET";
+                logger.info("[GRAPH] FORK '{}' branches={} joinTarget='{}'",
+                    nodeId, node.nextSteps(), joinNodeId);
+            } else if (node.isJoin()) {
+                logger.info("[GRAPH] JOIN '{}' upstreamBranches={}",
+                    nodeId, node.upstreamSteps());
+            } else if (node.isDecision()) {
+                logger.info("[GRAPH] DECISION '{}' branches={}",
+                    nodeId, node.nextSteps());
+            } else if (node.isSubgraph()) {
+                logger.info("[GRAPH] SUBGRAPH '{}' (requires expansion)",
+                    nodeId);
+            } else if (node.hasErrorHandling()) {
+                logger.debug("[GRAPH] STEP '{}' (kind={}) errorSteps={}",
+                    nodeId, node.kind(), node.errorSteps());
+            }
+        }
     }
 
     private String determineJobName(String workflowId) {
@@ -615,7 +659,12 @@ public class DynamicJobBuilder {
         FlowBuilder<SimpleFlow> splitBuilder = new FlowBuilder<>(splitName);
         splitBuilder.split(workflowTaskExecutor).add(flows.toArray(new Flow[0]));
 
-        logger.debug("Created parallel split '{}' with {} flows", splitName, flows.size());
+        List<String> branchNames = flows.stream()
+            .map(f -> f.getName())
+            .collect(Collectors.toList());
+
+        logger.info("[GRAPH] SPLIT '{}' starting {} parallel branches: {}",
+            splitName, flows.size(), branchNames);
         return splitBuilder.build();
     }
 

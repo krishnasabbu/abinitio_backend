@@ -6,37 +6,40 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.stream.Collectors;
 
-/**
- * Validates ExecutionPlan for structural correctness before job building.
- *
- * Performs comprehensive validation including:
- * - Cycle detection (prevents infinite loops)
- * - Missing step reference detection
- * - Implicit join detection (shared downstream without explicit JOIN)
- * - Orphan node detection (unreachable steps)
- * - Entry point validation
- *
- * All validation errors are collected and reported together for better UX.
- * Validation is fail-fast: throws ExecutionPlanValidationException with all errors.
- */
 public class ExecutionPlanValidator {
 
     private static final Logger logger = LoggerFactory.getLogger(ExecutionPlanValidator.class);
 
     private final ExecutionPlan plan;
+    private final ValidationConfig config;
     private final List<String> errors = new ArrayList<>();
     private final List<String> warnings = new ArrayList<>();
 
+    private Map<String, List<String>> incomingEdgesCache;
+
     public ExecutionPlanValidator(ExecutionPlan plan) {
+        this(plan, ValidationConfig.defaults());
+    }
+
+    public ExecutionPlanValidator(ExecutionPlan plan, ValidationConfig config) {
         this.plan = plan;
+        this.config = config;
     }
 
     public static void validate(ExecutionPlan plan) {
         new ExecutionPlanValidator(plan).performValidation();
     }
 
+    public static void validate(ExecutionPlan plan, ValidationConfig config) {
+        new ExecutionPlanValidator(plan, config).performValidation();
+    }
+
     public static ValidationResult validateWithResult(ExecutionPlan plan) {
-        ExecutionPlanValidator validator = new ExecutionPlanValidator(plan);
+        return validateWithResult(plan, ValidationConfig.defaults());
+    }
+
+    public static ValidationResult validateWithResult(ExecutionPlan plan, ValidationConfig config) {
+        ExecutionPlanValidator validator = new ExecutionPlanValidator(plan, config);
         try {
             validator.performValidation();
             return new ValidationResult(true, List.of(), validator.warnings);
@@ -46,13 +49,17 @@ public class ExecutionPlanValidator {
     }
 
     private void performValidation() {
-        logger.debug("Validating execution plan with {} steps", plan.steps().size());
+        logger.debug("Validating execution plan with {} steps (strictJoins={}, strictJoinUpstreams={}, requireExplicitJoin={})",
+            plan.steps().size(), config.strictJoins(), config.strictJoinUpstreams(), config.requireExplicitJoin());
+
+        this.incomingEdgesCache = computeIncomingEdges();
 
         validateNotEmpty();
         validateEntryPoints();
         validateStepReferences();
         detectCycles();
-        detectImplicitJoins();
+        validateConvergenceSemantics();
+        validateForkJoinDeclarations();
         detectOrphanNodes();
         validateJoinNodes();
 
@@ -182,79 +189,143 @@ public class ExecutionPlanValidator {
         return false;
     }
 
-    private void detectImplicitJoins() {
-        Map<String, List<String>> incomingEdges = computeIncomingEdges();
-
-        for (Map.Entry<String, List<String>> entry : incomingEdges.entrySet()) {
+    private void validateConvergenceSemantics() {
+        for (Map.Entry<String, List<String>> entry : incomingEdgesCache.entrySet()) {
             String stepId = entry.getKey();
             List<String> incomers = entry.getValue();
 
             if (incomers.size() > 1) {
                 StepNode node = plan.steps().get(stepId);
-                if (node != null && !node.isJoin()) {
-                    boolean hasParallelUpstream = hasParallelForkUpstream(stepId, incomers);
-                    if (hasParallelUpstream) {
-                        errors.add(String.format(
-                            "Implicit join detected at step '%s'. Multiple branches (%s) converge " +
-                            "without explicit JOIN node. Add kind=JOIN to this step or restructure " +
-                            "the graph with an explicit join barrier.",
-                            stepId, String.join(", ", incomers)));
+                if (node == null) continue;
+
+                boolean isJoinOrBarrier = node.kind() == StepKind.JOIN || node.kind() == StepKind.BARRIER;
+                boolean isDecisionExclusiveMerge = node.kind() == StepKind.DECISION &&
+                    isExclusiveMergeFromDecision(stepId, incomers);
+
+                if (!isJoinOrBarrier && !isDecisionExclusiveMerge) {
+                    String message = String.format(
+                        "Node '%s' (kind=%s) has %d incoming edges from %s but is not a JOIN/BARRIER. " +
+                        "Convergence without explicit synchronization will cause duplicate execution or race conditions.",
+                        stepId, node.kind(), incomers.size(), incomers);
+
+                    if (config.strictJoins()) {
+                        errors.add(message);
                     } else {
-                        warnings.add(String.format(
-                            "Step '%s' has multiple incoming edges from %s. If these branches " +
-                            "execute in parallel, consider making this an explicit JOIN node.",
-                            stepId, incomers));
+                        warnings.add(message + " Enable workflow.validation.strictJoins=true to enforce.");
                     }
                 }
             }
         }
     }
 
-    private boolean hasParallelForkUpstream(String stepId, List<String> incomers) {
-        Set<String> forkAncestors = new HashSet<>();
+    private boolean isExclusiveMergeFromDecision(String stepId, List<String> incomers) {
+        Set<String> decisionSources = new HashSet<>();
         for (String incomer : incomers) {
-            findForkAncestors(incomer, forkAncestors, new HashSet<>());
+            String decisionSource = findDecisionSource(incomer, new HashSet<>());
+            if (decisionSource != null) {
+                decisionSources.add(decisionSource);
+            }
         }
-        return !forkAncestors.isEmpty();
+        return decisionSources.size() == 1;
     }
 
-    private void findForkAncestors(String stepId, Set<String> forkAncestors, Set<String> visited) {
-        if (visited.contains(stepId)) return;
+    private String findDecisionSource(String stepId, Set<String> visited) {
+        if (visited.contains(stepId)) return null;
         visited.add(stepId);
 
         StepNode node = plan.steps().get(stepId);
-        if (node != null && node.isFork()) {
-            forkAncestors.add(stepId);
+        if (node == null) return null;
+
+        if (node.kind() == StepKind.DECISION) {
+            return stepId;
         }
 
-        Map<String, List<String>> incoming = computeIncomingEdges();
-        List<String> predecessors = incoming.getOrDefault(stepId, List.of());
-        for (String pred : predecessors) {
-            findForkAncestors(pred, forkAncestors, visited);
+        List<String> predecessors = incomingEdgesCache.getOrDefault(stepId, List.of());
+        if (predecessors.size() == 1) {
+            return findDecisionSource(predecessors.get(0), visited);
+        }
+
+        return null;
+    }
+
+    private void validateForkJoinDeclarations() {
+        for (Map.Entry<String, StepNode> entry : plan.steps().entrySet()) {
+            String stepId = entry.getKey();
+            StepNode node = entry.getValue();
+
+            if (node.kind() == StepKind.FORK) {
+                List<String> branches = node.nextSteps();
+                if (branches != null && branches.size() > 1) {
+                    String joinNodeId = node.executionHints() != null
+                        ? node.executionHints().getJoinNodeId()
+                        : null;
+
+                    if (joinNodeId == null) {
+                        String message = String.format(
+                            "FORK node '%s' has %d branches but no explicit joinNodeId declared. " +
+                            "This creates ambiguous convergence behavior.",
+                            stepId, branches.size());
+
+                        if (config.requireExplicitJoin()) {
+                            errors.add(message + " Set executionHints.joinNodeId or use workflow.validation.requireExplicitJoin=false.");
+                        } else {
+                            warnings.add(message);
+                        }
+                    } else {
+                        StepNode joinNode = plan.steps().get(joinNodeId);
+                        if (joinNode == null) {
+                            errors.add(String.format(
+                                "FORK node '%s' references non-existent joinNodeId '%s'",
+                                stepId, joinNodeId));
+                        } else if (joinNode.kind() != StepKind.JOIN && joinNode.kind() != StepKind.BARRIER) {
+                            errors.add(String.format(
+                                "FORK node '%s' references joinNodeId '%s' but that node has kind=%s, not JOIN/BARRIER",
+                                stepId, joinNodeId, joinNode.kind()));
+                        } else {
+                            validateBranchesReachJoin(stepId, branches, joinNodeId);
+                        }
+                    }
+                }
+            }
+
+            if (node.kind() == StepKind.DECISION) {
+                logger.debug("DECISION node '{}' present - ensure JobExecutionDecider is implemented", stepId);
+            }
+
+            if (node.kind() == StepKind.SUBGRAPH) {
+                logger.debug("SUBGRAPH node '{}' present - ensure expansion is implemented", stepId);
+            }
         }
     }
 
-    private Map<String, List<String>> computeIncomingEdges() {
-        Map<String, List<String>> incomingEdges = new HashMap<>();
-
-        for (String stepId : plan.steps().keySet()) {
-            incomingEdges.put(stepId, new ArrayList<>());
+    private void validateBranchesReachJoin(String forkId, List<String> branches, String joinNodeId) {
+        for (String branch : branches) {
+            if (!canReach(branch, joinNodeId, new HashSet<>())) {
+                errors.add(String.format(
+                    "FORK '%s' branch '%s' cannot reach declared join '%s'. " +
+                    "All branches must converge at the join point.",
+                    forkId, branch, joinNodeId));
+            }
         }
+    }
 
-        for (Map.Entry<String, StepNode> entry : plan.steps().entrySet()) {
-            String sourceId = entry.getKey();
-            StepNode node = entry.getValue();
+    private boolean canReach(String from, String target, Set<String> visited) {
+        if (from.equals(target)) return true;
+        if (visited.contains(from)) return false;
+        visited.add(from);
 
-            if (node.nextSteps() != null) {
-                for (String targetId : node.nextSteps()) {
-                    if (incomingEdges.containsKey(targetId)) {
-                        incomingEdges.get(targetId).add(sourceId);
-                    }
+        StepNode node = plan.steps().get(from);
+        if (node == null) return false;
+
+        if (node.nextSteps() != null) {
+            for (String next : node.nextSteps()) {
+                if (canReach(next, target, visited)) {
+                    return true;
                 }
             }
         }
 
-        return incomingEdges;
+        return false;
     }
 
     private void detectOrphanNodes() {
@@ -296,32 +367,82 @@ public class ExecutionPlanValidator {
     }
 
     private void validateJoinNodes() {
-        Map<String, List<String>> incomingEdges = computeIncomingEdges();
-
         for (Map.Entry<String, StepNode> entry : plan.steps().entrySet()) {
             String stepId = entry.getKey();
             StepNode node = entry.getValue();
 
             if (node.isJoin()) {
-                List<String> incomers = incomingEdges.get(stepId);
-                if (incomers == null || incomers.size() < 2) {
+                List<String> actualIncomers = incomingEdgesCache.get(stepId);
+                if (actualIncomers == null || actualIncomers.size() < 2) {
                     warnings.add(String.format(
                         "JOIN node '%s' has only %d incoming edge(s). " +
                         "JOIN nodes typically synchronize multiple branches.",
-                        stepId, incomers == null ? 0 : incomers.size()));
+                        stepId, actualIncomers == null ? 0 : actualIncomers.size()));
                 }
 
-                if (node.upstreamSteps() != null && !node.upstreamSteps().isEmpty()) {
+                if (node.upstreamSteps() != null && !node.upstreamSteps().isEmpty() && actualIncomers != null) {
                     Set<String> declared = new HashSet<>(node.upstreamSteps());
-                    Set<String> actual = new HashSet<>(incomers);
+                    Set<String> actual = new HashSet<>(actualIncomers);
+
                     if (!declared.equals(actual)) {
-                        warnings.add(String.format(
-                            "JOIN node '%s' upstreamSteps %s doesn't match actual " +
-                            "incoming edges %s. Consider synchronizing these.",
-                            stepId, declared, actual));
+                        String message = String.format(
+                            "JOIN node '%s' upstreamSteps %s doesn't match actual incoming edges %s. " +
+                            "This mismatch may cause synchronization issues.",
+                            stepId, declared, actual);
+
+                        if (config.strictJoinUpstreams()) {
+                            errors.add(message);
+                        } else {
+                            warnings.add(message + " Enable workflow.validation.strictJoinUpstreams=true to enforce.");
+                        }
                     }
                 }
             }
+        }
+    }
+
+    private Map<String, List<String>> computeIncomingEdges() {
+        Map<String, List<String>> incomingEdges = new HashMap<>();
+
+        for (String stepId : plan.steps().keySet()) {
+            incomingEdges.put(stepId, new ArrayList<>());
+        }
+
+        for (Map.Entry<String, StepNode> entry : plan.steps().entrySet()) {
+            String sourceId = entry.getKey();
+            StepNode node = entry.getValue();
+
+            if (node.nextSteps() != null) {
+                for (String targetId : node.nextSteps()) {
+                    if (incomingEdges.containsKey(targetId)) {
+                        incomingEdges.get(targetId).add(sourceId);
+                    }
+                }
+            }
+        }
+
+        return incomingEdges;
+    }
+
+    public record ValidationConfig(
+        boolean strictJoins,
+        boolean strictJoinUpstreams,
+        boolean requireExplicitJoin
+    ) {
+        public static ValidationConfig defaults() {
+            return new ValidationConfig(false, false, false);
+        }
+
+        public static ValidationConfig strict() {
+            return new ValidationConfig(true, true, true);
+        }
+
+        public static ValidationConfig fromProperties(
+            boolean strictJoins,
+            boolean strictJoinUpstreams,
+            boolean requireExplicitJoin
+        ) {
+            return new ValidationConfig(strictJoins, strictJoinUpstreams, requireExplicitJoin);
         }
     }
 

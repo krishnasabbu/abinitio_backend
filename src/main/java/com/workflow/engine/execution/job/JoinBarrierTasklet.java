@@ -2,6 +2,7 @@ package com.workflow.engine.execution.job;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.core.step.tasklet.Tasklet;
@@ -71,22 +72,30 @@ public class JoinBarrierTasklet implements Tasklet {
         Long jobExecutionId = chunkContext.getStepContext().getStepExecution()
             .getJobExecution().getId();
 
-        logger.info("JOIN barrier '{}' reached - all upstream branches completed. " +
-                   "Job: {} (instance={}, execution={})",
-            joinNodeId, jobName, jobInstanceId, jobExecutionId);
+        MDC.put("joinNodeId", joinNodeId);
+        MDC.put("jobExecutionId", String.valueOf(jobExecutionId));
 
-        if (!upstreamBranches.isEmpty()) {
-            logger.debug("JOIN '{}' synchronized branches: {}", joinNodeId, upstreamBranches);
+        try {
+            logger.info("[GRAPH] JOIN barrier '{}' fired - all {} upstream branches completed. " +
+                       "Job: {} (instance={}, execution={})",
+                joinNodeId, upstreamBranches.size(), jobName, jobInstanceId, jobExecutionId);
+
+            if (!upstreamBranches.isEmpty()) {
+                logger.info("[GRAPH] JOIN '{}' synchronized branches: {}", joinNodeId, upstreamBranches);
+            }
+
+            contribution.incrementWriteCount(1);
+
+            storeJoinMetadata(chunkContext, startTime);
+
+            logger.debug("[GRAPH] JOIN barrier '{}' completed in {}ms",
+                joinNodeId, System.currentTimeMillis() - startTime);
+
+            return RepeatStatus.FINISHED;
+        } finally {
+            MDC.remove("joinNodeId");
+            MDC.remove("jobExecutionId");
         }
-
-        contribution.incrementWriteCount(1);
-
-        storeJoinMetadata(chunkContext, startTime);
-
-        logger.debug("JOIN barrier '{}' completed in {}ms",
-            joinNodeId, System.currentTimeMillis() - startTime);
-
-        return RepeatStatus.FINISHED;
     }
 
     private void storeJoinMetadata(ChunkContext chunkContext, long startTime) {

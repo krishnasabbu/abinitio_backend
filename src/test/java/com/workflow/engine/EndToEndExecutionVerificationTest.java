@@ -914,4 +914,208 @@ public class EndToEndExecutionVerificationTest {
             return edge;
         }
     }
+
+    @Nested
+    @DisplayName("Nested Split Tests")
+    class NestedSplitTests {
+
+        @Test
+        @DisplayName("JOIN waits for nested splits: A -> FORK -> (B -> split(B1,B2) -> Bend, C) -> JOIN -> D")
+        void joinWaitsForNestedSplits() throws Exception {
+            WorkflowDefinition workflow = createNestedSplitWorkflow();
+            ExecutionPlan plan = executionGraphBuilder.build(workflow);
+
+            StepNode outerFork = plan.steps().get("outer_fork");
+            assertNotNull(outerFork, "Outer fork should exist");
+            assertEquals(StepKind.FORK, outerFork.kind());
+            assertEquals("outer_join", outerFork.executionHints().getJoinNodeId());
+
+            StepNode innerFork = plan.steps().get("inner_fork");
+            assertNotNull(innerFork, "Inner fork should exist");
+            assertEquals(StepKind.FORK, innerFork.kind());
+            assertEquals("inner_join", innerFork.executionHints().getJoinNodeId());
+
+            Job job = dynamicJobBuilder.buildJob(plan, "nested-split-test");
+            assertNotNull(job, "Job should build successfully");
+
+            JobParameters params = new JobParametersBuilder()
+                .addString("executionId", "nested-" + System.currentTimeMillis())
+                .addLong("timestamp", System.currentTimeMillis())
+                .toJobParameters();
+
+            JobExecution execution = jobLauncher.run(job, params);
+            assertEquals(BatchStatus.COMPLETED, execution.getStatus(),
+                "Nested split job should complete - D should only run after ALL branches including B1, B2, C finish");
+        }
+
+        private WorkflowDefinition createNestedSplitWorkflow() {
+            WorkflowDefinition workflow = new WorkflowDefinition();
+            workflow.setId("nested-split-test");
+            workflow.setName("Nested Split Test");
+
+            List<NodeDefinition> nodes = new ArrayList<>();
+
+            nodes.add(createNestedNode("start_1", "Start", null, null));
+
+            ExecutionHints outerForkHints = new ExecutionHints();
+            outerForkHints.setMode(ExecutionMode.PARALLEL);
+            outerForkHints.setJoinNodeId("outer_join");
+            nodes.add(createNestedNode("outer_fork", "Split", null, outerForkHints));
+
+            ExecutionHints innerForkHints = new ExecutionHints();
+            innerForkHints.setMode(ExecutionMode.PARALLEL);
+            innerForkHints.setJoinNodeId("inner_join");
+            nodes.add(createNestedNode("inner_fork", "Split", null, innerForkHints));
+
+            nodes.add(createNestedNode("branch_b1", "Filter", null, null));
+            nodes.add(createNestedNode("branch_b2", "Filter", null, null));
+            nodes.add(createNestedNode("inner_join", "Gather", null, null));
+            nodes.add(createNestedNode("branch_c", "Filter", null, null));
+            nodes.add(createNestedNode("outer_join", "Gather", null, null));
+            nodes.add(createNestedNode("step_d", "Filter", null, null));
+            nodes.add(createNestedNode("end_1", "End", null, null));
+
+            List<Edge> edges = new ArrayList<>();
+            edges.add(createNestedEdge("start_1", "outer_fork", true));
+            edges.add(createNestedEdge("outer_fork", "inner_fork", false));
+            edges.add(createNestedEdge("outer_fork", "branch_c", false));
+
+            edges.add(createNestedEdge("inner_fork", "branch_b1", false));
+            edges.add(createNestedEdge("inner_fork", "branch_b2", false));
+            edges.add(createNestedEdge("branch_b1", "inner_join", false));
+            edges.add(createNestedEdge("branch_b2", "inner_join", false));
+
+            edges.add(createNestedEdge("inner_join", "outer_join", false));
+            edges.add(createNestedEdge("branch_c", "outer_join", false));
+
+            edges.add(createNestedEdge("outer_join", "step_d", false));
+            edges.add(createNestedEdge("step_d", "end_1", false));
+
+            workflow.setNodes(nodes);
+            workflow.setEdges(edges);
+            return workflow;
+        }
+
+        private NodeDefinition createNestedNode(String id, String type, Object config, ExecutionHints hints) {
+            NodeDefinition node = new NodeDefinition();
+            node.setId(id);
+            node.setType(type);
+            node.setConfig(objectMapper.createObjectNode());
+            if (hints != null) {
+                node.setExecutionHints(hints);
+            }
+            return node;
+        }
+
+        private Edge createNestedEdge(String source, String target, boolean control) {
+            Edge edge = new Edge();
+            edge.setSource(source);
+            edge.setTarget(target);
+            edge.setControl(control);
+            return edge;
+        }
+    }
+
+    @Nested
+    @DisplayName("Strict Validation Mode Tests")
+    class StrictValidationModeTests {
+
+        @Test
+        @DisplayName("Strict mode rejects implicit joins")
+        void strictModeRejectsImplicitJoins() {
+            WorkflowDefinition workflow = createImplicitJoinWorkflow();
+            ExecutionPlan plan = executionGraphBuilder.build(workflow);
+
+            ExecutionPlanValidator.ValidationConfig strictConfig =
+                ExecutionPlanValidator.ValidationConfig.strict();
+
+            assertThrows(ExecutionPlanValidator.ExecutionPlanValidationException.class, () -> {
+                ExecutionPlanValidator.validate(plan, strictConfig);
+            }, "Strict mode should reject implicit joins");
+        }
+
+        @Test
+        @DisplayName("Strict mode rejects FORK without explicit joinNodeId")
+        void strictModeRejectsForkWithoutJoin() {
+            WorkflowDefinition workflow = createForkWithoutExplicitJoin();
+            ExecutionPlan plan = executionGraphBuilder.build(workflow);
+
+            ExecutionPlanValidator.ValidationConfig strictConfig =
+                ExecutionPlanValidator.ValidationConfig.strict();
+
+            assertThrows(ExecutionPlanValidator.ExecutionPlanValidationException.class, () -> {
+                ExecutionPlanValidator.validate(plan, strictConfig);
+            }, "Strict mode should reject FORK without explicit joinNodeId");
+        }
+
+        private WorkflowDefinition createImplicitJoinWorkflow() {
+            WorkflowDefinition workflow = new WorkflowDefinition();
+            workflow.setId("implicit-join-strict");
+
+            List<NodeDefinition> nodes = new ArrayList<>();
+            nodes.add(createStrictNode("start_1", "Start"));
+            nodes.add(createStrictNode("branch_a", "Filter"));
+            nodes.add(createStrictNode("branch_b", "Filter"));
+            nodes.add(createStrictNode("implicit_merge", "Filter"));
+            nodes.add(createStrictNode("end_1", "End"));
+
+            List<Edge> edges = new ArrayList<>();
+            edges.add(createStrictEdge("start_1", "branch_a", true));
+            edges.add(createStrictEdge("start_1", "branch_b", true));
+            edges.add(createStrictEdge("branch_a", "implicit_merge", false));
+            edges.add(createStrictEdge("branch_b", "implicit_merge", false));
+            edges.add(createStrictEdge("implicit_merge", "end_1", false));
+
+            workflow.setNodes(nodes);
+            workflow.setEdges(edges);
+            return workflow;
+        }
+
+        private WorkflowDefinition createForkWithoutExplicitJoin() {
+            WorkflowDefinition workflow = new WorkflowDefinition();
+            workflow.setId("fork-no-join-strict");
+
+            List<NodeDefinition> nodes = new ArrayList<>();
+            nodes.add(createStrictNode("start_1", "Start"));
+
+            NodeDefinition splitNode = createStrictNode("split_1", "Split");
+            ExecutionHints hints = new ExecutionHints();
+            hints.setMode(ExecutionMode.PARALLEL);
+            splitNode.setExecutionHints(hints);
+            nodes.add(splitNode);
+
+            nodes.add(createStrictNode("branch_a", "Filter"));
+            nodes.add(createStrictNode("branch_b", "Filter"));
+            nodes.add(createStrictNode("merge_1", "Gather"));
+            nodes.add(createStrictNode("end_1", "End"));
+
+            List<Edge> edges = new ArrayList<>();
+            edges.add(createStrictEdge("start_1", "split_1", true));
+            edges.add(createStrictEdge("split_1", "branch_a", false));
+            edges.add(createStrictEdge("split_1", "branch_b", false));
+            edges.add(createStrictEdge("branch_a", "merge_1", false));
+            edges.add(createStrictEdge("branch_b", "merge_1", false));
+            edges.add(createStrictEdge("merge_1", "end_1", false));
+
+            workflow.setNodes(nodes);
+            workflow.setEdges(edges);
+            return workflow;
+        }
+
+        private NodeDefinition createStrictNode(String id, String type) {
+            NodeDefinition node = new NodeDefinition();
+            node.setId(id);
+            node.setType(type);
+            node.setConfig(objectMapper.createObjectNode());
+            return node;
+        }
+
+        private Edge createStrictEdge(String source, String target, boolean control) {
+            Edge edge = new Edge();
+            edge.setSource(source);
+            edge.setTarget(target);
+            edge.setControl(control);
+            return edge;
+        }
+    }
 }
