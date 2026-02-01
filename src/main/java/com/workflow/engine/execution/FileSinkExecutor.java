@@ -2,6 +2,7 @@ package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 import org.springframework.batch.item.ExecutionContext;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
@@ -12,6 +13,8 @@ import org.springframework.batch.item.file.transform.DelimitedLineAggregator;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -24,6 +27,7 @@ import java.util.zip.GZIPOutputStream;
 @Component
 public class FileSinkExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
+    private static final Logger logger = LoggerFactory.getLogger(FileSinkExecutor.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
@@ -33,10 +37,28 @@ public class FileSinkExecutor implements NodeExecutor<Map<String, Object>, Map<S
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
-        List<Map<String, Object>> items = (List<Map<String, Object>>) context.getVariable("inputItems");
-        if (items == null) {
-            items = new ArrayList<>();
+        List<Map<String, Object>> items = new ArrayList<>();
+
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingContext = (RoutingNodeExecutionContext) context;
+            String executionId = routingContext.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+
+            List<Map<String, Object>> bufferItems = routingContext.getRoutingContext()
+                .getBufferStore().getRecords(executionId, nodeId, "in");
+
+            if (bufferItems != null && !bufferItems.isEmpty()) {
+                items.addAll(bufferItems);
+                logger.debug("FileSink reader read {} items from buffer for node {}", items.size(), nodeId);
+                routingContext.getRoutingContext().getBufferStore().clearBuffer(executionId, nodeId, "in");
+            }
+        } else {
+            List<Map<String, Object>> contextItems = (List<Map<String, Object>>) context.getVariable("outputItems");
+            if (contextItems != null) {
+                items.addAll(contextItems);
+            }
         }
+
         return new ListItemReader<>(items);
     }
 
@@ -134,6 +156,12 @@ public class FileSinkExecutor implements NodeExecutor<Map<String, Object>, Map<S
             });
         }
 
+        try {
+            writer.afterPropertiesSet();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to initialize FlatFileItemWriter", e);
+        }
+
         return writer;
     }
 
@@ -200,6 +228,12 @@ public class FileSinkExecutor implements NodeExecutor<Map<String, Object>, Map<S
         writer.setShouldDeleteIfExists("overwrite".equals(mode));
         writer.setLineAggregator(aggregator);
 
+        try {
+            writer.afterPropertiesSet();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to initialize FlatFileItemWriter for txt", e);
+        }
+
         return writer;
     }
 
@@ -223,6 +257,12 @@ public class FileSinkExecutor implements NodeExecutor<Map<String, Object>, Map<S
         writer.setAppendAllowed("append".equals(mode));
         writer.setShouldDeleteIfExists("overwrite".equals(mode));
         writer.setLineAggregator(aggregator);
+
+        try {
+            writer.afterPropertiesSet();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to initialize FlatFileItemWriter for json", e);
+        }
 
         return writer;
     }

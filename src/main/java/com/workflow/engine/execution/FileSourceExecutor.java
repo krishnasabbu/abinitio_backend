@@ -310,7 +310,27 @@ public class FileSourceExecutor implements NodeExecutor<Map<String, Object>, Map
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
-        return items -> {};
+        if (context instanceof com.workflow.engine.execution.routing.RoutingNodeExecutionContext) {
+            com.workflow.engine.execution.routing.RoutingNodeExecutionContext routingContext =
+                (com.workflow.engine.execution.routing.RoutingNodeExecutionContext) context;
+            return items -> {
+                logger.debug("FileSource writing {} items to routing context", items.size());
+                List<Map<String, Object>> itemList = new ArrayList<>();
+                for (Map<String, Object> item : items) {
+                    itemList.add(item);
+                }
+                context.setVariable("outputItems", itemList);
+            };
+        } else {
+            return items -> {
+                logger.debug("FileSource writing {} items to context variables", items.size());
+                List<Map<String, Object>> itemList = new ArrayList<>();
+                for (Map<String, Object> item : items) {
+                    itemList.add(item);
+                }
+                context.setVariable("outputItems", itemList);
+            };
+        }
     }
 
     @Override

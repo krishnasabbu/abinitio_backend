@@ -77,10 +77,12 @@ public class StepFactory {
         NodeDefinition nodeDefinition = createNodeDefinition(stepNode);
         NodeExecutionContext context;
 
-        if (bufferStore != null && executionId != null && hasMultipleOutputs(stepNode)) {
+        if (bufferStore != null && executionId != null) {
             List<OutputPort> outputPorts = stepNode.outputPorts() != null ? stepNode.outputPorts() : List.of();
             RoutingContext routingContext = new RoutingContext(executionId, stepNode.nodeId(), outputPorts, bufferStore);
             context = new RoutingNodeExecutionContext(nodeDefinition, null, routingContext);
+            logger.debug("Created RoutingNodeExecutionContext for node={} with {} output ports",
+                stepNode.nodeId(), outputPorts.size());
         } else {
             context = new NodeExecutionContext(nodeDefinition, null);
         }
