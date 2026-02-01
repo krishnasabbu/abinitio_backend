@@ -175,6 +175,12 @@ public class LogApiService {
         String sql = "SELECT COUNT(*) as total, level FROM execution_logs WHERE execution_id = ? GROUP BY level";
         Map<String, Integer> levels = new HashMap<>();
 
+        // Initialize all levels with 0
+        levels.put("INFO", 0);
+        levels.put("ERROR", 0);
+        levels.put("WARNING", 0);
+        levels.put("DEBUG", 0);
+
         List<Map<String, Object>> results = jdbcTemplate.queryForList(sql, executionId);
         int total = 0;
         for (Map<String, Object> row : results) {
@@ -184,13 +190,26 @@ public class LogApiService {
             total += cnt;
         }
 
-        return Map.of(
-                "total", total,
-                "levels", levels,
-                "nodes", getNodesList(executionId),
-                "first_timestamp", getFirstTimestamp(executionId),
-                "last_timestamp", getLastTimestamp(executionId)
-        );
+        Map<String, Object> result = new HashMap<>();
+        result.put("total", total);
+        result.put("levels", levels);
+
+        List<String> nodes = getNodesList(executionId);
+        if (nodes != null && !nodes.isEmpty()) {
+            result.put("nodes", nodes);
+        }
+
+        Long firstTimestamp = getFirstTimestamp(executionId);
+        if (firstTimestamp != null) {
+            result.put("first_timestamp", firstTimestamp);
+        }
+
+        Long lastTimestamp = getLastTimestamp(executionId);
+        if (lastTimestamp != null) {
+            result.put("last_timestamp", lastTimestamp);
+        }
+
+        return result;
     }
 
     public Map<String, Object> getAnalyticsExecutionLogs(String executionId, int limit) {

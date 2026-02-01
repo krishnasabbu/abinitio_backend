@@ -7,6 +7,7 @@ import com.workflow.engine.api.persistence.ExecutionLogWriter;
 import com.workflow.engine.api.persistence.PersistenceJobListener;
 import com.workflow.engine.api.persistence.PersistenceStepListener;
 import com.workflow.engine.api.util.PayloadNormalizer;
+import com.workflow.engine.api.util.TimestampConverter;
 import com.workflow.engine.execution.job.DynamicJobBuilder;
 import com.workflow.engine.execution.job.StepFactory;
 import com.workflow.engine.graph.ExecutionGraphBuilder;
@@ -185,23 +186,24 @@ public class ExecutionApiService {
     }
 
     public List<WorkflowExecutionDto> getExecutionHistory(String workflowId) {
-        String sql = "SELECT id, execution_id, workflow_name, status, start_time, end_time, total_nodes, completed_nodes, successful_nodes, failed_nodes, total_records, total_execution_time_ms, error_message FROM workflow_executions";
+        String sql = "SELECT id, execution_id, workflow_name, status, start_time, end_time, total_nodes, completed_nodes, failed_nodes, total_records, total_execution_time_ms, execution_mode, planning_start_time, max_parallel_nodes, peak_workers, total_input_records, total_output_records, total_bytes_read, total_bytes_written, error_message FROM workflow_executions";
         if (workflowId != null && !workflowId.isEmpty()) {
-            sql += " WHERE workflow_id = ?";
+            sql += " WHERE workflow_id = ? ORDER BY start_time DESC";
             return jdbcTemplate.query(sql, new Object[]{workflowId}, this::mapExecutionDto);
         }
+        sql += " ORDER BY start_time DESC";
         return jdbcTemplate.query(sql, this::mapExecutionDto);
     }
 
     public WorkflowExecutionDto getExecutionById(String executionId) {
-        String sql = "SELECT id, execution_id, workflow_name, status, start_time, end_time, total_nodes, completed_nodes, successful_nodes, failed_nodes, total_records, total_execution_time_ms, error_message FROM workflow_executions WHERE execution_id = ?";
+        String sql = "SELECT id, execution_id, workflow_name, status, start_time, end_time, total_nodes, completed_nodes, failed_nodes, total_records, total_execution_time_ms, execution_mode, planning_start_time, max_parallel_nodes, peak_workers, total_input_records, total_output_records, total_bytes_read, total_bytes_written, error_message FROM workflow_executions WHERE execution_id = ?";
         List<WorkflowExecutionDto> result = jdbcTemplate.query(sql, new Object[]{executionId}, this::mapExecutionDto);
         return result.isEmpty() ? null : result.get(0);
     }
 
     public List<NodeExecutionDto> getNodeExecutions(String executionId) {
         try {
-            String sql = "SELECT id, execution_id, node_id, node_label, node_type, status, start_time, end_time, execution_time_ms, records_processed, retry_count, error_message FROM node_executions WHERE execution_id = ? ORDER BY start_time ASC";
+            String sql = "SELECT id, execution_id, node_id, node_label, node_type, status, start_time, end_time, execution_time_ms, records_processed, input_records, output_records, input_bytes, output_bytes, queue_wait_time_ms, depth_in_dag, retry_count, error_message FROM node_executions WHERE execution_id = ? ORDER BY start_time ASC";
             List<NodeExecutionDto> result = jdbcTemplate.query(sql, new Object[]{executionId}, (rs, rowNum) -> {
                 NodeExecutionDto dto = new NodeExecutionDto();
                 dto.setId(rs.getString("id"));
@@ -210,10 +212,66 @@ public class ExecutionApiService {
                 dto.setNodeLabel(rs.getString("node_label"));
                 dto.setNodeType(rs.getString("node_type"));
                 dto.setStatus(rs.getString("status"));
-                dto.setStartTime(rs.getLong("start_time"));
-                dto.setEndTime(rs.getLong("end_time"));
+
+                // Convert timestamps to ISO 8601
+                Long startTimeMs = rs.getLong("start_time");
+                if (startTimeMs > 0) {
+                    dto.setStartTimeMs(startTimeMs);
+                }
+
+                Long endTimeMs = rs.getLong("end_time");
+                if (endTimeMs > 0) {
+                    dto.setEndTimeMs(endTimeMs);
+                }
+
                 dto.setExecutionTimeMs(rs.getLong("execution_time_ms"));
                 dto.setRecordsProcessed(rs.getLong("records_processed"));
+
+                // Set optional fields
+                Long inputRecords = rs.getLong("input_records");
+                if (inputRecords != null && inputRecords > 0) {
+                    dto.setInputRecords(inputRecords);
+                }
+
+                Long outputRecords = rs.getLong("output_records");
+                if (outputRecords != null && outputRecords > 0) {
+                    dto.setOutputRecords(outputRecords);
+                }
+
+                Long inputBytes = rs.getLong("input_bytes");
+                if (inputBytes != null && inputBytes > 0) {
+                    dto.setInputBytes(inputBytes);
+                }
+
+                Long outputBytes = rs.getLong("output_bytes");
+                if (outputBytes != null && outputBytes > 0) {
+                    dto.setOutputBytes(outputBytes);
+                }
+
+                Long queueWaitTimeMs = rs.getLong("queue_wait_time_ms");
+                if (queueWaitTimeMs != null && queueWaitTimeMs > 0) {
+                    dto.setQueueWaitTimeMs(queueWaitTimeMs);
+                }
+
+                int depthInDag = rs.getInt("depth_in_dag");
+                if (depthInDag >= 0) {
+                    dto.setDepthInDag(depthInDag);
+                }
+
+                // Calculate derived metrics
+                Long executionTimeMs = rs.getLong("execution_time_ms");
+                Long recordsProc = rs.getLong("records_processed");
+
+                if (executionTimeMs > 0 && recordsProc != null && recordsProc > 0) {
+                    double recordsPerSecond = (recordsProc * 1000.0) / executionTimeMs;
+                    dto.setRecordsPerSecond(recordsPerSecond);
+                }
+
+                if (executionTimeMs > 0 && outputBytes != null && outputBytes > 0) {
+                    double bytesPerSecond = (outputBytes * 1000.0) / executionTimeMs;
+                    dto.setBytesPerSecond(bytesPerSecond);
+                }
+
                 dto.setRetryCount(rs.getInt("retry_count"));
                 dto.setErrorMessage(rs.getString("error_message"));
                 return dto;
@@ -238,13 +296,12 @@ public class ExecutionApiService {
             if (nodes == null || nodes.isEmpty()) {
                 logger.debug("No node executions found for executionId: {}, actualStatus: {}", executionId, actualStatus);
                 Map<String, Object> result = new HashMap<>();
-                result.put("timeline", timeline);
                 result.put("execution_id", executionId);
-                result.put("status", actualStatus);
-                if ("running".equals(actualStatus)) {
-                    result.put("message", "Execution is still running or no nodes have started yet");
-                } else if ("not_found".equals(actualStatus)) {
-                    result.put("message", "Execution not found");
+                result.put("workflow_status", actualStatus);
+                result.put("nodes", timeline);
+                if (execution != null) {
+                    result.put("workflow_start_time", execution.getStartTime());
+                    result.put("workflow_end_time", execution.getEndTime());
                 }
                 return result;
             }
@@ -253,28 +310,28 @@ public class ExecutionApiService {
                 Map<String, Object> nodeTimeline = new HashMap<>();
                 nodeTimeline.put("node_id", node.getNodeId());
                 nodeTimeline.put("node_label", node.getNodeLabel() != null ? node.getNodeLabel() : "");
-                nodeTimeline.put("node_type", node.getNodeType() != null ? node.getNodeType() : "");
                 nodeTimeline.put("status", node.getStatus() != null ? node.getStatus() : "unknown");
-                nodeTimeline.put("start_time", node.getStartTime() != null ? node.getStartTime() : 0);
-                nodeTimeline.put("end_time", node.getEndTime() != null ? node.getEndTime() : 0);
-                nodeTimeline.put("duration_ms", node.getExecutionTimeMs() != null ? node.getExecutionTimeMs() : 0);
-                nodeTimeline.put("records_processed", node.getRecordsProcessed() != null ? node.getRecordsProcessed() : 0);
+                nodeTimeline.put("start_time", node.getStartTime());
+                nodeTimeline.put("end_time", node.getEndTime());
+                nodeTimeline.put("execution_time_ms", node.getExecutionTimeMs() != null ? node.getExecutionTimeMs() : 0);
                 timeline.add(nodeTimeline);
             }
 
             Map<String, Object> result = new HashMap<>();
-            result.put("timeline", timeline);
             result.put("execution_id", executionId);
-            result.put("status", actualStatus);
-            result.put("total_nodes", execution != null && execution.getTotalNodes() != null ? execution.getTotalNodes() : nodes.size());
-            result.put("completed_nodes", execution != null && execution.getCompletedNodes() != null ? execution.getCompletedNodes() : 0);
+            result.put("workflow_status", actualStatus);
+            result.put("nodes", timeline);
+            if (execution != null) {
+                result.put("workflow_start_time", execution.getStartTime());
+                result.put("workflow_end_time", execution.getEndTime());
+            }
             return result;
         } catch (Exception e) {
             logger.error("Error retrieving execution timeline for executionId: {}", executionId, e);
             Map<String, Object> errorResult = new HashMap<>();
-            errorResult.put("timeline", new ArrayList<>());
             errorResult.put("execution_id", executionId);
-            errorResult.put("status", "error");
+            errorResult.put("workflow_status", "error");
+            errorResult.put("nodes", new ArrayList<>());
             errorResult.put("error", e.getMessage());
             return errorResult;
         }
@@ -284,23 +341,85 @@ public class ExecutionApiService {
         WorkflowExecutionDto execution = getExecutionById(executionId);
         if (execution == null) {
             Map<String, Object> notFound = new HashMap<>();
-            notFound.put("execution_id", executionId);
-            notFound.put("status", "not_found");
-            notFound.put("message", "Execution not found");
+            notFound.put("error", "Execution not found");
             return notFound;
         }
+
         Map<String, Object> result = new HashMap<>();
-        result.put("execution_id", executionId);
-        result.put("status", execution.getStatus() != null ? execution.getStatus() : "unknown");
-        result.put("workflow_name", execution.getWorkflowName());
-        result.put("total_duration_ms", execution.getTotalExecutionTimeMs() != null ? execution.getTotalExecutionTimeMs() : 0);
-        result.put("total_records", execution.getTotalRecords() != null ? execution.getTotalRecords() : 0);
-        result.put("total_nodes", execution.getTotalNodes() != null ? execution.getTotalNodes() : 0);
-        result.put("completed_nodes", execution.getCompletedNodes() != null ? execution.getCompletedNodes() : 0);
-        result.put("successful_nodes", execution.getSuccessfulNodes() != null ? execution.getSuccessfulNodes() : 0);
-        result.put("failed_nodes", execution.getFailedNodes() != null ? execution.getFailedNodes() : 0);
-        result.put("start_time", execution.getStartTime() != null ? execution.getStartTime() : 0);
-        result.put("end_time", execution.getEndTime() != null ? execution.getEndTime() : 0);
+
+        // Build workflow_metrics
+        Map<String, Object> workflowMetrics = new HashMap<>();
+        workflowMetrics.put("execution_id", execution.getExecutionId());
+        workflowMetrics.put("workflow_name", execution.getWorkflowName());
+        workflowMetrics.put("status", execution.getStatus());
+        workflowMetrics.put("start_time", execution.getStartTime());
+        workflowMetrics.put("end_time", execution.getEndTime());
+        workflowMetrics.put("total_execution_time_ms", execution.getTotalExecutionTimeMs());
+        workflowMetrics.put("total_nodes", execution.getTotalNodes());
+        workflowMetrics.put("completed_nodes", execution.getCompletedNodes());
+        workflowMetrics.put("failed_nodes", execution.getFailedNodes());
+        workflowMetrics.put("total_records_processed", execution.getTotalRecordsProcessed());
+        if (execution.getExecutionMode() != null) {
+            workflowMetrics.put("execution_mode", execution.getExecutionMode());
+        }
+        if (execution.getPlanningStartTime() != null) {
+            workflowMetrics.put("planning_start_time", execution.getPlanningStartTime());
+        }
+        if (execution.getMaxParallelNodes() != null) {
+            workflowMetrics.put("max_parallel_nodes", execution.getMaxParallelNodes());
+        }
+        if (execution.getPeakWorkers() != null) {
+            workflowMetrics.put("peak_workers", execution.getPeakWorkers());
+        }
+        if (execution.getTotalInputRecords() != null) {
+            workflowMetrics.put("total_input_records", execution.getTotalInputRecords());
+        }
+        if (execution.getTotalOutputRecords() != null) {
+            workflowMetrics.put("total_output_records", execution.getTotalOutputRecords());
+        }
+        if (execution.getTotalBytesRead() != null) {
+            workflowMetrics.put("total_bytes_read", execution.getTotalBytesRead());
+        }
+        if (execution.getTotalBytesWritten() != null) {
+            workflowMetrics.put("total_bytes_written", execution.getTotalBytesWritten());
+        }
+        if (execution.getError() != null) {
+            workflowMetrics.put("error", execution.getError());
+        }
+
+        result.put("workflow_metrics", workflowMetrics);
+
+        // Build node_metrics array
+        List<NodeExecutionDto> nodes = getNodeExecutions(executionId);
+        List<Map<String, Object>> nodeMetrics = new ArrayList<>();
+        for (NodeExecutionDto node : nodes) {
+            Map<String, Object> nodeMetric = new HashMap<>();
+            nodeMetric.put("node_id", node.getNodeId());
+            nodeMetric.put("node_label", node.getNodeLabel());
+            nodeMetric.put("records_processed", node.getRecordsProcessed());
+            nodeMetric.put("execution_time_ms", node.getExecutionTimeMs());
+            if (node.getInputRecords() != null) {
+                nodeMetric.put("input_records", node.getInputRecords());
+            }
+            if (node.getOutputRecords() != null) {
+                nodeMetric.put("output_records", node.getOutputRecords());
+            }
+            if (node.getInputBytes() != null) {
+                nodeMetric.put("input_bytes", node.getInputBytes());
+            }
+            if (node.getOutputBytes() != null) {
+                nodeMetric.put("output_bytes", node.getOutputBytes());
+            }
+            if (node.getRecordsPerSecond() != null) {
+                nodeMetric.put("records_per_second", node.getRecordsPerSecond());
+            }
+            if (node.getBytesPerSecond() != null) {
+                nodeMetric.put("bytes_per_second", node.getBytesPerSecond());
+            }
+            nodeMetrics.add(nodeMetric);
+        }
+
+        result.put("node_metrics", nodeMetrics);
         return result;
     }
 
@@ -315,13 +434,13 @@ public class ExecutionApiService {
                 .sorted((a, b) -> Long.compare(b.getExecutionTimeMs(), a.getExecutionTimeMs()))
                 .limit(topN)
                 .forEach(node -> {
-                    double percentage = (node.getExecutionTimeMs() * 100.0) / totalTime;
-                    bottlenecks.add(Map.of(
-                            "node_id", node.getNodeId(),
-                            "node_label", node.getNodeLabel() != null ? node.getNodeLabel() : "",
-                            "execution_time_ms", node.getExecutionTimeMs(),
-                            "percentage_of_total", percentage
-                    ));
+                    Map<String, Object> bottleneck = new HashMap<>();
+                    bottleneck.put("node_id", node.getNodeId());
+                    bottleneck.put("node_label", node.getNodeLabel() != null ? node.getNodeLabel() : "");
+                    bottleneck.put("execution_time_ms", node.getExecutionTimeMs());
+                    bottleneck.put("records_processed", node.getRecordsProcessed());
+                    bottleneck.put("status", node.getStatus() != null ? node.getStatus() : "unknown");
+                    bottlenecks.add(bottleneck);
                 });
 
         return Map.of("bottlenecks", bottlenecks);
@@ -482,15 +601,70 @@ public class ExecutionApiService {
         dto.setExecutionId(rs.getString("execution_id"));
         dto.setWorkflowName(rs.getString("workflow_name"));
         dto.setStatus(rs.getString("status"));
-        dto.setStartTime(rs.getLong("start_time"));
-        dto.setEndTime(rs.getLong("end_time"));
+
+        // Convert timestamps to ISO 8601
+        Long startTimeMs = rs.getLong("start_time");
+        if (startTimeMs > 0) {
+            dto.setStartTimeMs(startTimeMs);
+        }
+
+        Long endTimeMs = rs.getLong("end_time");
+        if (endTimeMs > 0) {
+            dto.setEndTimeMs(endTimeMs);
+        }
+
         dto.setTotalNodes(rs.getInt("total_nodes"));
         dto.setCompletedNodes(rs.getInt("completed_nodes"));
-        dto.setSuccessfulNodes(rs.getInt("successful_nodes"));
         dto.setFailedNodes(rs.getInt("failed_nodes"));
-        dto.setTotalRecords(rs.getLong("total_records"));
+        dto.setTotalRecordsProcessed(rs.getLong("total_records"));
         dto.setTotalExecutionTimeMs(rs.getLong("total_execution_time_ms"));
-        dto.setErrorMessage(rs.getString("error_message"));
+
+        // Set new optional fields
+        String executionMode = rs.getString("execution_mode");
+        if (executionMode != null) {
+            dto.setExecutionMode(executionMode.toLowerCase());
+        }
+
+        Long planningStartTimeMs = rs.getLong("planning_start_time");
+        if (planningStartTimeMs > 0) {
+            dto.setPlanningStartTimeMs(planningStartTimeMs);
+        }
+
+        int maxParallelNodes = rs.getInt("max_parallel_nodes");
+        if (maxParallelNodes > 0) {
+            dto.setMaxParallelNodes(maxParallelNodes);
+        }
+
+        int peakWorkers = rs.getInt("peak_workers");
+        if (peakWorkers > 0) {
+            dto.setPeakWorkers(peakWorkers);
+        }
+
+        Long totalInputRecords = rs.getLong("total_input_records");
+        if (totalInputRecords != null && totalInputRecords > 0) {
+            dto.setTotalInputRecords(totalInputRecords);
+        }
+
+        Long totalOutputRecords = rs.getLong("total_output_records");
+        if (totalOutputRecords != null && totalOutputRecords > 0) {
+            dto.setTotalOutputRecords(totalOutputRecords);
+        }
+
+        Long totalBytesRead = rs.getLong("total_bytes_read");
+        if (totalBytesRead != null && totalBytesRead > 0) {
+            dto.setTotalBytesRead(totalBytesRead);
+        }
+
+        Long totalBytesWritten = rs.getLong("total_bytes_written");
+        if (totalBytesWritten != null && totalBytesWritten > 0) {
+            dto.setTotalBytesWritten(totalBytesWritten);
+        }
+
+        String errorMessage = rs.getString("error_message");
+        if (errorMessage != null) {
+            dto.setError(errorMessage);
+        }
+
         return dto;
     }
 }
