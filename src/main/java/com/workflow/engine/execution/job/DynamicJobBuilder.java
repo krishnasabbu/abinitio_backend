@@ -32,34 +32,29 @@ import java.util.stream.Collectors;
  *
  * <h2>Fork/Join Semantics</h2>
  * <pre>
- * FORK Pattern:
- *   [StepA] (FORK or PARALLEL mode)
+ * FORK Pattern (EXPLICIT JOIN REQUIRED):
+ *   [StepA] (kind=FORK, executionHints.joinNodeId="join-step")
  *      |
  *   split(executor)
  *    / | \
  * [B] [C] [D]  <- parallel branches
  *    \ | /
- *    (join)    <- implicit join when split completes
+ *    (join)    <- split completes when ALL branches done
  *      |
- *   [JoinStep] <- explicit JOIN node executes after all branches
+ *   [join-step] (kind=JOIN) <- explicit JOIN node executes ONCE
  *      |
  *   [Continue]
  * </pre>
  *
  * <h2>Key Design Decisions</h2>
  * <ul>
- *   <li>JOIN is explicit: Nodes with kind=JOIN or classification=JOIN are wired as
- *       synchronization barriers after parallel splits</li>
- *   <li>No visited-skip: Uses topological compilation with explicit join detection
- *       instead of naive DFS visited tracking</li>
- *   <li>Error routing: on("FAILED") routes to errorSteps, on("*") to nextSteps</li>
- *   <li>Deterministic naming: Job name is workflow-{planId} for restartability</li>
+ *   <li>JOIN is explicit: Fork nodes MUST declare joinNodeId in executionHints</li>
+ *   <li>No implicit join inference: Forks without explicit join fail fast</li>
+ *   <li>Error routing: FAILED/STOPPED/UNKNOWN route to errorSteps, then end</li>
+ *   <li>Deterministic naming: workflowId is REQUIRED (no UUID fallback in prod)</li>
  *   <li>Shared executor: Uses DI'd ThreadPoolTaskExecutor with MDC propagation</li>
+ *   <li>DECISION/SUBGRAPH: Fail fast until properly implemented</li>
  * </ul>
- *
- * <h2>Subgraph Support (Extension Point)</h2>
- * Nodes with kind=SUBGRAPH trigger {@link #compileSubgraph} which can be overridden
- * to expand nested workflows. Default implementation throws UnsupportedOperationException.
  *
  * @see ExecutionPlan
  * @see ExecutionPlanValidator
@@ -70,6 +65,8 @@ public class DynamicJobBuilder {
 
     private static final Logger logger = LoggerFactory.getLogger(DynamicJobBuilder.class);
 
+    private static final Set<String> ERROR_STATUSES = Set.of("FAILED", "STOPPED", "UNKNOWN");
+
     private final StepFactory stepFactory;
     private final JobRepository jobRepository;
     private final PlatformTransactionManager transactionManager;
@@ -78,8 +75,8 @@ public class DynamicJobBuilder {
     @Value("${workflow.job.restartable:true}")
     private boolean restartable;
 
-    @Value("${workflow.executor.concurrency-limit:0}")
-    private int concurrencyLimit;
+    @Value("${workflow.job.require-workflow-id:true}")
+    private boolean requireWorkflowId;
 
     @Autowired
     public DynamicJobBuilder(
@@ -116,11 +113,13 @@ public class DynamicJobBuilder {
 
         ExecutionPlanValidator.validate(plan);
 
-        String jobName = determineJobName(plan, workflowId);
+        String jobName = determineJobName(workflowId);
         logger.info("Building job '{}' with {} steps, {} entry points",
             jobName, plan.steps().size(), plan.entryStepIds().size());
 
         BuildContext ctx = new BuildContext(plan, jobName);
+
+        validateForkJoinStructure(ctx);
         buildAllSteps(ctx);
 
         Flow mainFlow = buildMainFlow(ctx);
@@ -139,11 +138,114 @@ public class DynamicJobBuilder {
         return job;
     }
 
-    private String determineJobName(ExecutionPlan plan, String workflowId) {
+    private String determineJobName(String workflowId) {
         if (workflowId != null && !workflowId.isBlank()) {
             return "workflow-" + workflowId.trim();
         }
-        return "workflow-" + UUID.randomUUID();
+
+        if (requireWorkflowId) {
+            throw new IllegalArgumentException(
+                "workflowId is required for job building. " +
+                "Set workflow.job.require-workflow-id=false to allow UUID fallback.");
+        }
+
+        String uuid = UUID.randomUUID().toString();
+        logger.warn("No workflowId provided, using UUID: {}. This breaks restart semantics.", uuid);
+        return "workflow-" + uuid;
+    }
+
+    private void validateForkJoinStructure(BuildContext ctx) {
+        for (Map.Entry<String, StepNode> entry : ctx.plan.steps().entrySet()) {
+            String nodeId = entry.getKey();
+            StepNode node = entry.getValue();
+
+            if (node.isFork()) {
+                validateForkNode(nodeId, node, ctx);
+            }
+
+            if (node.isJoin()) {
+                validateJoinNode(nodeId, node, ctx);
+            }
+        }
+    }
+
+    private void validateForkNode(String nodeId, StepNode node, BuildContext ctx) {
+        List<String> nextSteps = node.nextSteps();
+        if (nextSteps == null || nextSteps.size() <= 1) {
+            return;
+        }
+
+        String joinNodeId = getExplicitJoinNodeId(node);
+        if (joinNodeId == null) {
+            throw new IllegalStateException(String.format(
+                "FORK node '%s' has %d branches but no explicit joinNodeId. " +
+                "Set executionHints.joinNodeId to the JOIN node where branches converge.",
+                nodeId, nextSteps.size()));
+        }
+
+        StepNode joinNode = ctx.plan.steps().get(joinNodeId);
+        if (joinNode == null) {
+            throw new IllegalStateException(String.format(
+                "FORK node '%s' references joinNodeId '%s' which does not exist.",
+                nodeId, joinNodeId));
+        }
+
+        if (!joinNode.isJoin()) {
+            throw new IllegalStateException(String.format(
+                "FORK node '%s' references joinNodeId '%s' but that node has kind=%s, not JOIN. " +
+                "The target node must have kind=JOIN.",
+                nodeId, joinNodeId, joinNode.kind()));
+        }
+
+        for (String branchStart : nextSteps) {
+            if (!canReachNode(branchStart, joinNodeId, ctx, new HashSet<>())) {
+                throw new IllegalStateException(String.format(
+                    "FORK node '%s' branch '%s' cannot reach join node '%s'. " +
+                    "All branches must converge at the declared join.",
+                    nodeId, branchStart, joinNodeId));
+            }
+        }
+
+        logger.debug("Validated FORK '{}' -> JOIN '{}'", nodeId, joinNodeId);
+    }
+
+    private void validateJoinNode(String nodeId, StepNode node, BuildContext ctx) {
+        List<String> upstreamSteps = findUpstreamSteps(nodeId, ctx.plan);
+        if (upstreamSteps.size() < 2) {
+            logger.warn("JOIN node '{}' has only {} upstream step(s). " +
+                       "JOIN nodes typically synchronize multiple branches.",
+                nodeId, upstreamSteps.size());
+        }
+    }
+
+    private boolean canReachNode(String fromId, String targetId, BuildContext ctx, Set<String> visited) {
+        if (fromId.equals(targetId)) {
+            return true;
+        }
+        if (visited.contains(fromId)) {
+            return false;
+        }
+        visited.add(fromId);
+
+        StepNode node = ctx.plan.steps().get(fromId);
+        if (node == null || node.nextSteps() == null) {
+            return false;
+        }
+
+        for (String nextId : node.nextSteps()) {
+            if (canReachNode(nextId, targetId, ctx, visited)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String getExplicitJoinNodeId(StepNode forkNode) {
+        if (forkNode.executionHints() != null &&
+            forkNode.executionHints().getJoinNodeId() != null) {
+            return forkNode.executionHints().getJoinNodeId();
+        }
+        return null;
     }
 
     private void buildAllSteps(BuildContext ctx) {
@@ -152,7 +254,7 @@ public class DynamicJobBuilder {
             StepNode node = entry.getValue();
 
             Step step;
-            if (node.isJoin() && isBarrierOnly(node)) {
+            if (isBarrierOnly(node)) {
                 step = buildBarrierStep(ctx, node);
             } else {
                 step = stepFactory.buildStep(node);
@@ -164,9 +266,15 @@ public class DynamicJobBuilder {
     }
 
     private boolean isBarrierOnly(StepNode node) {
-        return "Barrier".equals(node.nodeType()) ||
-               "JoinBarrier".equals(node.nodeType()) ||
-               node.kind() == StepKind.BARRIER;
+        return node.kind() == StepKind.BARRIER ||
+               (node.kind() == StepKind.JOIN && isBarrierNodeType(node));
+    }
+
+    private boolean isBarrierNodeType(StepNode node) {
+        String nodeType = node.nodeType();
+        return "Barrier".equals(nodeType) ||
+               "JoinBarrier".equals(nodeType) ||
+               "Collect".equals(nodeType);
     }
 
     private Step buildBarrierStep(BuildContext ctx, StepNode node) {
@@ -189,11 +297,11 @@ public class DynamicJobBuilder {
         }
 
         if (entryStepIds.size() == 1) {
-            return buildFlowFromNode(entryStepIds.get(0), ctx);
+            return buildFlowFromNode(entryStepIds.get(0), ctx, FlowMode.NORMAL);
         }
 
         List<Flow> entryFlows = entryStepIds.stream()
-            .map(id -> buildFlowFromNode(id, ctx))
+            .map(id -> buildFlowFromNode(id, ctx, FlowMode.NORMAL))
             .filter(Objects::nonNull)
             .collect(Collectors.toList());
 
@@ -201,13 +309,14 @@ public class DynamicJobBuilder {
             throw new IllegalStateException("No valid entry flows could be built");
         }
 
-        return createParallelSplit(entryFlows, "main-split", ctx);
+        return createParallelSplit(entryFlows, "main-split");
     }
 
-    private Flow buildFlowFromNode(String nodeId, BuildContext ctx) {
-        if (ctx.flowCache.containsKey(nodeId)) {
-            logger.debug("Returning cached flow for node '{}'", nodeId);
-            return ctx.flowCache.get(nodeId);
+    private Flow buildFlowFromNode(String nodeId, BuildContext ctx, FlowMode mode) {
+        String cacheKey = nodeId + ":" + mode;
+        if (ctx.flowCache.containsKey(cacheKey)) {
+            logger.debug("Returning cached flow for node '{}' mode={}", nodeId, mode);
+            return ctx.flowCache.get(cacheKey);
         }
 
         if (ctx.currentPath.contains(nodeId)) {
@@ -224,19 +333,23 @@ public class DynamicJobBuilder {
 
         try {
             Flow flow;
-            if (node.isJoin()) {
+            if (node.isSubgraph()) {
+                throw new UnsupportedOperationException(String.format(
+                    "SUBGRAPH node '%s' is not yet supported. " +
+                    "Subgraph expansion requires explicit implementation.", nodeId));
+            } else if (node.isDecision()) {
+                throw new UnsupportedOperationException(String.format(
+                    "DECISION node '%s' is not yet supported. " +
+                    "Decision routing requires JobExecutionDecider implementation.", nodeId));
+            } else if (node.isJoin()) {
                 flow = buildJoinFlow(node, ctx);
-            } else if (node.isSubgraph()) {
-                flow = compileSubgraph(node, ctx);
             } else if (node.isFork()) {
                 flow = buildForkFlow(node, ctx);
-            } else if (node.isDecision()) {
-                flow = buildDecisionFlow(node, ctx);
             } else {
                 flow = buildNormalFlow(node, ctx);
             }
 
-            ctx.flowCache.put(nodeId, flow);
+            ctx.flowCache.put(cacheKey, flow);
             return flow;
         } finally {
             ctx.currentPath.remove(nodeId);
@@ -267,7 +380,17 @@ public class DynamicJobBuilder {
             return flowBuilder.build();
         }
 
-        String joinNodeId = findJoinForFork(node, ctx);
+        if (nextSteps.size() == 1) {
+            Flow nextFlow = buildFlowFromNode(nextSteps.get(0), ctx, FlowMode.NORMAL);
+            flowBuilder.on("*").to(nextFlow);
+            return flowBuilder.build();
+        }
+
+        String joinNodeId = getExplicitJoinNodeId(node);
+        if (joinNodeId == null) {
+            throw new IllegalStateException(
+                "FORK node '" + node.nodeId() + "' has multiple branches but no joinNodeId");
+        }
 
         List<Flow> branchFlows = new ArrayList<>();
         for (String branchStartId : nextSteps) {
@@ -282,20 +405,14 @@ public class DynamicJobBuilder {
             return flowBuilder.build();
         }
 
-        Flow splitFlow = createParallelSplit(branchFlows, node.nodeId() + "-split", ctx);
+        Flow splitFlow = createParallelSplit(branchFlows, node.nodeId() + "-split");
         flowBuilder.on("*").to(splitFlow);
 
-        if (joinNodeId != null) {
-            Flow joinContinuation = buildFlowFromNode(joinNodeId, ctx);
-            if (joinContinuation != null) {
-                return new FlowBuilder<SimpleFlow>(node.nodeId() + "-fork-join")
-                    .start(flowBuilder.build())
-                    .next(joinContinuation)
-                    .build();
-            }
-        }
-
-        return flowBuilder.build();
+        Flow joinContinuation = buildFlowFromNode(joinNodeId, ctx, FlowMode.NORMAL);
+        return new FlowBuilder<SimpleFlow>(node.nodeId() + "-fork-join")
+            .start(flowBuilder.build())
+            .next(joinContinuation)
+            .build();
     }
 
     private Flow buildBranchUntilJoin(String startNodeId, String joinNodeId, BuildContext ctx) {
@@ -306,6 +423,19 @@ public class DynamicJobBuilder {
         StepNode node = ctx.plan.steps().get(startNodeId);
         if (node == null) {
             throw new IllegalStateException("Branch node not found: " + startNodeId);
+        }
+
+        if (node.isJoin() && !startNodeId.equals(joinNodeId)) {
+            throw new IllegalStateException(String.format(
+                "Branch encountered unexpected JOIN node '%s' before target join '%s'. " +
+                "Nested joins are not supported in branch compilation.",
+                startNodeId, joinNodeId));
+        }
+
+        if (node.isSubgraph()) {
+            throw new UnsupportedOperationException(String.format(
+                "SUBGRAPH node '%s' encountered in branch. Subgraph expansion not implemented.",
+                startNodeId));
         }
 
         Step step = ctx.stepMap.get(startNodeId);
@@ -333,87 +463,55 @@ public class DynamicJobBuilder {
                 }
             }
         } else {
-            List<Flow> subBranches = new ArrayList<>();
-            for (String nextId : nextSteps) {
-                if (!nextId.equals(joinNodeId)) {
-                    Flow subBranch = buildBranchUntilJoin(nextId, joinNodeId, ctx);
+            if (node.isFork()) {
+                String nestedJoinId = getExplicitJoinNodeId(node);
+                if (nestedJoinId == null) {
+                    throw new IllegalStateException(String.format(
+                        "Nested FORK '%s' within branch has no joinNodeId", startNodeId));
+                }
+
+                List<Flow> subBranches = new ArrayList<>();
+                for (String nextId : nextSteps) {
+                    Flow subBranch = buildBranchUntilJoin(nextId, nestedJoinId, ctx);
                     if (subBranch != null) {
                         subBranches.add(subBranch);
                     }
                 }
-            }
 
-            if (!subBranches.isEmpty()) {
-                if (isParallelMode(node)) {
-                    Flow split = createParallelSplit(subBranches, startNodeId + "-subsplit", ctx);
-                    flowBuilder.on("*").to(split);
-                } else {
-                    Flow chainedFlow = chainFlowsSequentially(subBranches, startNodeId + "-chain");
-                    flowBuilder.on("*").to(chainedFlow);
+                if (!subBranches.isEmpty()) {
+                    Flow nestedSplit = createParallelSplit(subBranches, startNodeId + "-nested-split");
+                    flowBuilder.on("*").to(nestedSplit);
+
+                    Flow afterNestedJoin = buildBranchUntilJoin(nestedJoinId, joinNodeId, ctx);
+                    if (afterNestedJoin != null) {
+                        return new FlowBuilder<SimpleFlow>(startNodeId + "-nested-fork-join")
+                            .start(flowBuilder.build())
+                            .next(buildFlowFromNode(nestedJoinId, ctx, FlowMode.BRANCH))
+                            .next(afterNestedJoin)
+                            .build();
+                    }
                 }
             } else {
-                flowBuilder.on("*").end();
+                List<Flow> nextFlows = new ArrayList<>();
+                for (String nextId : nextSteps) {
+                    if (!nextId.equals(joinNodeId)) {
+                        Flow nextFlow = buildBranchUntilJoin(nextId, joinNodeId, ctx);
+                        if (nextFlow != null) {
+                            nextFlows.add(nextFlow);
+                        }
+                    }
+                }
+
+                if (!nextFlows.isEmpty()) {
+                    Flow chainedFlow = chainFlowsSequentially(nextFlows, startNodeId + "-chain");
+                    flowBuilder.on("*").to(chainedFlow);
+                } else {
+                    flowBuilder.on("*").end();
+                }
             }
         }
 
         return flowBuilder.build();
-    }
-
-    private String findJoinForFork(StepNode forkNode, BuildContext ctx) {
-        if (forkNode.nextSteps() == null || forkNode.nextSteps().size() <= 1) {
-            return null;
-        }
-
-        Set<String> allDownstream = new HashSet<>();
-        Map<String, Set<String>> branchReachable = new HashMap<>();
-
-        for (String branchStart : forkNode.nextSteps()) {
-            Set<String> reachable = new HashSet<>();
-            collectReachableNodes(branchStart, reachable, ctx);
-            branchReachable.put(branchStart, reachable);
-            allDownstream.addAll(reachable);
-        }
-
-        for (String candidate : allDownstream) {
-            StepNode candidateNode = ctx.plan.steps().get(candidate);
-            if (candidateNode != null && candidateNode.isJoin()) {
-                boolean reachableFromAll = branchReachable.values().stream()
-                    .allMatch(set -> set.contains(candidate));
-                if (reachableFromAll) {
-                    logger.debug("Found join node '{}' for fork '{}'", candidate, forkNode.nodeId());
-                    return candidate;
-                }
-            }
-        }
-
-        Set<String> commonDownstream = null;
-        for (Set<String> reachable : branchReachable.values()) {
-            if (commonDownstream == null) {
-                commonDownstream = new HashSet<>(reachable);
-            } else {
-                commonDownstream.retainAll(reachable);
-            }
-        }
-
-        if (commonDownstream != null && !commonDownstream.isEmpty()) {
-            logger.warn("Fork '{}' has common downstream {} but no explicit JOIN. " +
-                       "Consider adding kind=JOIN to the convergence point.",
-                forkNode.nodeId(), commonDownstream);
-        }
-
-        return null;
-    }
-
-    private void collectReachableNodes(String nodeId, Set<String> reachable, BuildContext ctx) {
-        if (reachable.contains(nodeId)) return;
-        reachable.add(nodeId);
-
-        StepNode node = ctx.plan.steps().get(nodeId);
-        if (node != null && node.nextSteps() != null) {
-            for (String next : node.nextSteps()) {
-                collectReachableNodes(next, reachable, ctx);
-            }
-        }
     }
 
     private Flow buildJoinFlow(StepNode joinNode, BuildContext ctx) {
@@ -429,17 +527,6 @@ public class DynamicJobBuilder {
         return flowBuilder.build();
     }
 
-    private Flow buildDecisionFlow(StepNode node, BuildContext ctx) {
-        logger.debug("Building DECISION flow for node '{}' (using sequential fallback)", node.nodeId());
-        return buildNormalFlow(node, ctx);
-    }
-
-    protected Flow compileSubgraph(StepNode node, BuildContext ctx) {
-        logger.warn("SUBGRAPH expansion not implemented for node '{}'. " +
-                   "Override compileSubgraph() to support nested workflows.", node.nodeId());
-        return buildNormalFlow(node, ctx);
-    }
-
     private void wireErrorRouting(FlowBuilder<SimpleFlow> flowBuilder, StepNode node, BuildContext ctx) {
         if (!node.hasErrorHandling()) {
             return;
@@ -448,22 +535,28 @@ public class DynamicJobBuilder {
         List<String> errorSteps = node.errorSteps();
         logger.debug("Wiring error routing for '{}' to {}", node.nodeId(), errorSteps);
 
+        Flow errorFlow;
         if (errorSteps.size() == 1) {
-            String errorNodeId = errorSteps.get(0);
-            Flow errorFlow = buildFlowFromNode(errorNodeId, ctx);
-            if (errorFlow != null) {
-                flowBuilder.on("FAILED").to(errorFlow);
-            }
+            errorFlow = buildFlowFromNode(errorSteps.get(0), ctx, FlowMode.ERROR);
         } else {
             List<Flow> errorFlows = errorSteps.stream()
-                .map(id -> buildFlowFromNode(id, ctx))
+                .map(id -> buildFlowFromNode(id, ctx, FlowMode.ERROR))
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
 
-            if (!errorFlows.isEmpty()) {
-                Flow chainedErrorFlow = chainFlowsSequentially(errorFlows, node.nodeId() + "-error-chain");
-                flowBuilder.on("FAILED").to(chainedErrorFlow);
+            if (errorFlows.isEmpty()) {
+                return;
             }
+            errorFlow = chainFlowsSequentially(errorFlows, node.nodeId() + "-error-chain");
+        }
+
+        Flow errorFlowThenEnd = new FlowBuilder<SimpleFlow>(node.nodeId() + "-error-end")
+            .start(errorFlow)
+            .on("*").end()
+            .build();
+
+        for (String errorStatus : ERROR_STATUSES) {
+            flowBuilder.on(errorStatus).to(errorFlowThenEnd);
         }
     }
 
@@ -476,7 +569,7 @@ public class DynamicJobBuilder {
         }
 
         if (nextSteps.size() == 1) {
-            Flow nextFlow = buildFlowFromNode(nextSteps.get(0), ctx);
+            Flow nextFlow = buildFlowFromNode(nextSteps.get(0), ctx, FlowMode.NORMAL);
             if (nextFlow != null) {
                 flowBuilder.on("*").to(nextFlow);
             } else {
@@ -486,7 +579,7 @@ public class DynamicJobBuilder {
         }
 
         List<Flow> nextFlows = nextSteps.stream()
-            .map(id -> buildFlowFromNode(id, ctx))
+            .map(id -> buildFlowFromNode(id, ctx, FlowMode.NORMAL))
             .filter(Objects::nonNull)
             .collect(Collectors.toList());
 
@@ -496,7 +589,7 @@ public class DynamicJobBuilder {
         }
 
         if (isParallelMode(node)) {
-            Flow splitFlow = createParallelSplit(nextFlows, node.nodeId() + "-next-split", ctx);
+            Flow splitFlow = createParallelSplit(nextFlows, node.nodeId() + "-next-split");
             flowBuilder.on("*").to(splitFlow);
         } else {
             Flow chainedFlow = chainFlowsSequentially(nextFlows, node.nodeId() + "-next-chain");
@@ -509,7 +602,7 @@ public class DynamicJobBuilder {
                node.executionHints().getMode() == ExecutionMode.PARALLEL;
     }
 
-    private Flow createParallelSplit(List<Flow> flows, String splitName, BuildContext ctx) {
+    private Flow createParallelSplit(List<Flow> flows, String splitName) {
         if (flows.isEmpty()) {
             throw new IllegalArgumentException("Cannot create split with empty flows");
         }
@@ -556,6 +649,12 @@ public class DynamicJobBuilder {
         }
 
         return upstream;
+    }
+
+    private enum FlowMode {
+        NORMAL,
+        BRANCH,
+        ERROR
     }
 
     private static class BuildContext {

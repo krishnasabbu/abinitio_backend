@@ -39,4 +39,11 @@ public class ExecutionHints {
 
     /** Execution timeout in milliseconds (null means unlimited) */
     private Long timeout;
+
+    /**
+     * For FORK nodes: the explicit JOIN node ID where all branches must converge.
+     * Required when mode=PARALLEL and node has multiple nextSteps.
+     * The join node must have kind=JOIN.
+     */
+    private String joinNodeId;
 }
