@@ -92,74 +92,96 @@ public class AnalyticsApiService {
 
     public Map<String, Object> getExecutionHealth(String executionId) {
         try {
-            String sql = "SELECT status, total_nodes, successful_nodes, failed_nodes, " +
-                    "total_execution_time_ms FROM workflow_executions WHERE execution_id = ?";
+            String sql = "SELECT status, total_nodes, completed_nodes, successful_nodes, failed_nodes, " +
+                    "total_execution_time_ms, total_records FROM workflow_executions WHERE execution_id = ?";
 
             List<Map<String, Object>> result = jdbcTemplate.queryForList(sql, executionId);
             if (result.isEmpty()) {
-                return Map.of(
-                        "status", "not_found",
-                        "execution_id", executionId,
-                        "message", "Execution not found or still initializing"
-                );
+                Map<String, Object> notFound = new HashMap<>();
+                notFound.put("status", "not_found");
+                notFound.put("execution_id", executionId);
+                notFound.put("message", "Execution not found");
+                return notFound;
             }
 
             Map<String, Object> exec = result.get(0);
-            Integer totalNodes = ((Number) exec.getOrDefault("total_nodes", 0)).intValue();
-            Integer successfulNodes = ((Number) exec.getOrDefault("successful_nodes", 0)).intValue();
-            Integer failedNodes = ((Number) exec.getOrDefault("failed_nodes", 0)).intValue();
+            Integer totalNodes = exec.get("total_nodes") != null ? ((Number) exec.get("total_nodes")).intValue() : 0;
+            Integer completedNodes = exec.get("completed_nodes") != null ? ((Number) exec.get("completed_nodes")).intValue() : 0;
+            Integer successfulNodes = exec.get("successful_nodes") != null ? ((Number) exec.get("successful_nodes")).intValue() : 0;
+            Integer failedNodes = exec.get("failed_nodes") != null ? ((Number) exec.get("failed_nodes")).intValue() : 0;
+            Long totalRecords = exec.get("total_records") != null ? ((Number) exec.get("total_records")).longValue() : 0;
+            Long totalExecutionTimeMs = exec.get("total_execution_time_ms") != null ? ((Number) exec.get("total_execution_time_ms")).longValue() : 0;
 
             double healthScore = totalNodes > 0 ? (successfulNodes * 100.0 / totalNodes) : 0;
+            double completionRate = totalNodes > 0 ? (completedNodes * 100.0 / totalNodes) : 0;
 
-            return Map.of(
-                    "execution_id", executionId,
-                    "status", exec.get("status") != null ? exec.get("status") : "running",
-                    "health_score", healthScore,
-                    "total_nodes", totalNodes,
-                    "successful_nodes", successfulNodes,
-                    "failed_nodes", failedNodes
-            );
+            Map<String, Object> response = new HashMap<>();
+            response.put("execution_id", executionId);
+            response.put("status", exec.get("status") != null ? exec.get("status") : "unknown");
+            response.put("health_score", healthScore);
+            response.put("completion_rate", completionRate);
+            response.put("total_nodes", totalNodes);
+            response.put("completed_nodes", completedNodes);
+            response.put("successful_nodes", successfulNodes);
+            response.put("failed_nodes", failedNodes);
+            response.put("total_records", totalRecords);
+            response.put("total_execution_time_ms", totalExecutionTimeMs);
+            return response;
         } catch (Exception e) {
-            return Map.of(
-                    "status", "error",
-                    "execution_id", executionId,
-                    "message", e.getMessage()
-            );
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("status", "error");
+            errorResponse.put("execution_id", executionId);
+            errorResponse.put("message", e.getMessage());
+            return errorResponse;
         }
     }
 
     public Map<String, Object> getExecutionPerformance(String executionId) {
         try {
-            String sql = "SELECT total_execution_time_ms, total_records, total_nodes FROM workflow_executions WHERE execution_id = ?";
+            String sql = "SELECT status, total_execution_time_ms, total_records, total_nodes, " +
+                    "completed_nodes, successful_nodes, failed_nodes, start_time, end_time " +
+                    "FROM workflow_executions WHERE execution_id = ?";
             List<Map<String, Object>> result = jdbcTemplate.queryForList(sql, executionId);
 
             if (result.isEmpty()) {
-                return Map.of(
-                        "status", "not_found",
-                        "execution_id", executionId,
-                        "message", "Execution not found or still initializing"
-                );
+                Map<String, Object> notFound = new HashMap<>();
+                notFound.put("status", "not_found");
+                notFound.put("execution_id", executionId);
+                notFound.put("message", "Execution not found");
+                return notFound;
             }
 
             Map<String, Object> exec = result.get(0);
-            Long duration = ((Number) exec.getOrDefault("total_execution_time_ms", 0)).longValue();
-            Long records = ((Number) exec.getOrDefault("total_records", 0)).longValue();
+            Long duration = exec.get("total_execution_time_ms") != null ? ((Number) exec.get("total_execution_time_ms")).longValue() : 0;
+            Long records = exec.get("total_records") != null ? ((Number) exec.get("total_records")).longValue() : 0;
+            Integer totalNodes = exec.get("total_nodes") != null ? ((Number) exec.get("total_nodes")).intValue() : 0;
+            Integer completedNodes = exec.get("completed_nodes") != null ? ((Number) exec.get("completed_nodes")).intValue() : 0;
+            Integer successfulNodes = exec.get("successful_nodes") != null ? ((Number) exec.get("successful_nodes")).intValue() : 0;
+            Integer failedNodes = exec.get("failed_nodes") != null ? ((Number) exec.get("failed_nodes")).intValue() : 0;
 
             double throughput = duration > 0 ? (records * 1000.0 / duration) : 0;
+            double nodesPerSecond = duration > 0 ? (completedNodes * 1000.0 / duration) : 0;
 
-            return Map.of(
-                    "execution_id", executionId,
-                    "total_duration_ms", duration,
-                    "total_records_processed", records,
-                    "throughput_records_per_sec", throughput,
-                    "total_nodes", exec.get("total_nodes") != null ? exec.get("total_nodes") : 0
-            );
+            Map<String, Object> response = new HashMap<>();
+            response.put("execution_id", executionId);
+            response.put("status", exec.get("status") != null ? exec.get("status") : "unknown");
+            response.put("total_duration_ms", duration);
+            response.put("total_records_processed", records);
+            response.put("throughput_records_per_sec", throughput);
+            response.put("nodes_per_second", nodesPerSecond);
+            response.put("total_nodes", totalNodes);
+            response.put("completed_nodes", completedNodes);
+            response.put("successful_nodes", successfulNodes);
+            response.put("failed_nodes", failedNodes);
+            response.put("start_time", exec.get("start_time"));
+            response.put("end_time", exec.get("end_time"));
+            return response;
         } catch (Exception e) {
-            return Map.of(
-                    "status", "error",
-                    "execution_id", executionId,
-                    "message", e.getMessage()
-            );
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("status", "error");
+            errorResponse.put("execution_id", executionId);
+            errorResponse.put("message", e.getMessage());
+            return errorResponse;
         }
     }
 

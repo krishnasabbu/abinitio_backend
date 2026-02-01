@@ -219,7 +219,7 @@ public class ExecutionApiService {
                 return dto;
             });
 
-            logger.debug("Retrieved {} node executions for executionId: {}", result.size(), executionId);
+            logger.info("Retrieved {} node executions for executionId: {}", result.size(), executionId);
             return result;
         } catch (Exception e) {
             logger.error("Error retrieving node executions for executionId: {}", executionId, e);
@@ -232,49 +232,76 @@ public class ExecutionApiService {
             List<NodeExecutionDto> nodes = getNodeExecutions(executionId);
             List<Map<String, Object>> timeline = new ArrayList<>();
 
+            WorkflowExecutionDto execution = getExecutionById(executionId);
+            String actualStatus = execution != null ? execution.getStatus() : "not_found";
+
             if (nodes == null || nodes.isEmpty()) {
-                logger.debug("No node executions found for executionId: {}", executionId);
-                return Map.of(
-                        "timeline", timeline,
-                        "execution_id", executionId,
-                        "status", "running",
-                        "message", "Execution is still running or no nodes have started yet"
-                );
+                logger.debug("No node executions found for executionId: {}, actualStatus: {}", executionId, actualStatus);
+                Map<String, Object> result = new HashMap<>();
+                result.put("timeline", timeline);
+                result.put("execution_id", executionId);
+                result.put("status", actualStatus);
+                if ("running".equals(actualStatus)) {
+                    result.put("message", "Execution is still running or no nodes have started yet");
+                } else if ("not_found".equals(actualStatus)) {
+                    result.put("message", "Execution not found");
+                }
+                return result;
             }
 
             for (NodeExecutionDto node : nodes) {
-                timeline.add(Map.of(
-                        "node_id", node.getNodeId(),
-                        "node_label", node.getNodeLabel() != null ? node.getNodeLabel() : "",
-                        "start_time", node.getStartTime() != null ? node.getStartTime() : 0,
-                        "end_time", node.getEndTime() != null ? node.getEndTime() : 0,
-                        "duration_ms", node.getExecutionTimeMs() != null ? node.getExecutionTimeMs() : 0
-                ));
+                Map<String, Object> nodeTimeline = new HashMap<>();
+                nodeTimeline.put("node_id", node.getNodeId());
+                nodeTimeline.put("node_label", node.getNodeLabel() != null ? node.getNodeLabel() : "");
+                nodeTimeline.put("node_type", node.getNodeType() != null ? node.getNodeType() : "");
+                nodeTimeline.put("status", node.getStatus() != null ? node.getStatus() : "unknown");
+                nodeTimeline.put("start_time", node.getStartTime() != null ? node.getStartTime() : 0);
+                nodeTimeline.put("end_time", node.getEndTime() != null ? node.getEndTime() : 0);
+                nodeTimeline.put("duration_ms", node.getExecutionTimeMs() != null ? node.getExecutionTimeMs() : 0);
+                nodeTimeline.put("records_processed", node.getRecordsProcessed() != null ? node.getRecordsProcessed() : 0);
+                timeline.add(nodeTimeline);
             }
-            return Map.of("timeline", timeline);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("timeline", timeline);
+            result.put("execution_id", executionId);
+            result.put("status", actualStatus);
+            result.put("total_nodes", execution != null && execution.getTotalNodes() != null ? execution.getTotalNodes() : nodes.size());
+            result.put("completed_nodes", execution != null && execution.getCompletedNodes() != null ? execution.getCompletedNodes() : 0);
+            return result;
         } catch (Exception e) {
             logger.error("Error retrieving execution timeline for executionId: {}", executionId, e);
-            return Map.of(
-                    "timeline", new ArrayList<>(),
-                    "execution_id", executionId,
-                    "error", e.getMessage()
-            );
+            Map<String, Object> errorResult = new HashMap<>();
+            errorResult.put("timeline", new ArrayList<>());
+            errorResult.put("execution_id", executionId);
+            errorResult.put("status", "error");
+            errorResult.put("error", e.getMessage());
+            return errorResult;
         }
     }
 
     public Map<String, Object> getExecutionMetrics(String executionId) {
         WorkflowExecutionDto execution = getExecutionById(executionId);
         if (execution == null) {
-            return new HashMap<>();
+            Map<String, Object> notFound = new HashMap<>();
+            notFound.put("execution_id", executionId);
+            notFound.put("status", "not_found");
+            notFound.put("message", "Execution not found");
+            return notFound;
         }
-        return Map.of(
-                "execution_id", executionId,
-                "total_duration_ms", execution.getTotalExecutionTimeMs() != null ? execution.getTotalExecutionTimeMs() : 0,
-                "total_records", execution.getTotalRecords() != null ? execution.getTotalRecords() : 0,
-                "total_nodes", execution.getTotalNodes() != null ? execution.getTotalNodes() : 0,
-                "successful_nodes", execution.getSuccessfulNodes() != null ? execution.getSuccessfulNodes() : 0,
-                "failed_nodes", execution.getFailedNodes() != null ? execution.getFailedNodes() : 0
-        );
+        Map<String, Object> result = new HashMap<>();
+        result.put("execution_id", executionId);
+        result.put("status", execution.getStatus() != null ? execution.getStatus() : "unknown");
+        result.put("workflow_name", execution.getWorkflowName());
+        result.put("total_duration_ms", execution.getTotalExecutionTimeMs() != null ? execution.getTotalExecutionTimeMs() : 0);
+        result.put("total_records", execution.getTotalRecords() != null ? execution.getTotalRecords() : 0);
+        result.put("total_nodes", execution.getTotalNodes() != null ? execution.getTotalNodes() : 0);
+        result.put("completed_nodes", execution.getCompletedNodes() != null ? execution.getCompletedNodes() : 0);
+        result.put("successful_nodes", execution.getSuccessfulNodes() != null ? execution.getSuccessfulNodes() : 0);
+        result.put("failed_nodes", execution.getFailedNodes() != null ? execution.getFailedNodes() : 0);
+        result.put("start_time", execution.getStartTime() != null ? execution.getStartTime() : 0);
+        result.put("end_time", execution.getEndTime() != null ? execution.getEndTime() : 0);
+        return result;
     }
 
     public Map<String, Object> getExecutionBottlenecks(String executionId, int topN) {

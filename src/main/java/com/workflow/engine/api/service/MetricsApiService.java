@@ -85,22 +85,44 @@ public class MetricsApiService {
 
     public Map<String, Object> getExecutionResources(String executionId) {
         List<Map<String, Object>> snapshots = new ArrayList<>();
-        String sql = "SELECT timestamp, cpu_percent, memory_mb, disk_io_read_mb, disk_io_write_mb FROM execution_resource_snapshots WHERE execution_id = ? ORDER BY timestamp DESC";
-        List<Map<String, Object>> dbSnapshots = jdbcTemplate.queryForList(sql, executionId);
-        snapshots.addAll(dbSnapshots);
+        try {
+            String sql = "SELECT timestamp, cpu_percent, memory_mb, disk_io_read_mb, disk_io_write_mb FROM execution_resource_snapshots WHERE execution_id = ? ORDER BY timestamp DESC";
+            List<Map<String, Object>> dbSnapshots = jdbcTemplate.queryForList(sql, executionId);
+            snapshots.addAll(dbSnapshots);
+        } catch (Exception e) {
+        }
 
-        Map<String, Object> summary = Map.of(
-                "avg_cpu_percent", 35.5,
-                "peak_memory_mb", 2048,
-                "total_disk_io_mb", 1024
-        );
+        String execSql = "SELECT status, total_nodes, successful_nodes, failed_nodes, total_records, total_execution_time_ms FROM workflow_executions WHERE execution_id = ?";
+        Map<String, Object> execInfo = new HashMap<>();
+        try {
+            List<Map<String, Object>> execResult = jdbcTemplate.queryForList(execSql, executionId);
+            if (!execResult.isEmpty()) {
+                execInfo = execResult.get(0);
+            }
+        } catch (Exception e) {
+        }
 
-        return Map.of(
-                "execution_id", executionId,
-                "snapshots", snapshots,
-                "summary", summary,
-                "node_resources", new ArrayList<>()
-        );
+        List<Map<String, Object>> nodeResources = new ArrayList<>();
+        try {
+            String nodesSql = "SELECT node_id, node_type, status, execution_time_ms, records_processed FROM node_executions WHERE execution_id = ?";
+            nodeResources = jdbcTemplate.queryForList(nodesSql, executionId);
+        } catch (Exception e) {
+        }
+
+        Map<String, Object> summary = new HashMap<>();
+        summary.put("status", execInfo.getOrDefault("status", "unknown"));
+        summary.put("total_nodes", execInfo.getOrDefault("total_nodes", 0));
+        summary.put("successful_nodes", execInfo.getOrDefault("successful_nodes", 0));
+        summary.put("failed_nodes", execInfo.getOrDefault("failed_nodes", 0));
+        summary.put("total_records", execInfo.getOrDefault("total_records", 0));
+        summary.put("total_execution_time_ms", execInfo.getOrDefault("total_execution_time_ms", 0));
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("execution_id", executionId);
+        result.put("snapshots", snapshots);
+        result.put("summary", summary);
+        result.put("node_resources", nodeResources);
+        return result;
     }
 
     public Map<String, Object> getNodeResources(String executionId, String nodeId) {
