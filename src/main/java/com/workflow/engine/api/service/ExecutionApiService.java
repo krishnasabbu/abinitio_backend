@@ -265,8 +265,8 @@ public class ExecutionApiService {
                 result.put("workflow_status", actualStatus);
                 result.put("nodes", timeline);
                 if (execution != null) {
-                    result.put("workflow_start_time", execution.getStartTime());
-                    result.put("workflow_end_time", execution.getEndTime());
+                    result.put("workflow_start_time", execution.getStartTimeMs());
+                    result.put("workflow_end_time", execution.getEndTimeMs());
                 }
                 return result;
             }
@@ -287,8 +287,8 @@ public class ExecutionApiService {
             result.put("workflow_status", actualStatus);
             result.put("nodes", timeline);
             if (execution != null) {
-                result.put("workflow_start_time", execution.getStartTime());
-                result.put("workflow_end_time", execution.getEndTime());
+                result.put("workflow_start_time", execution.getStartTimeMs());
+                result.put("workflow_end_time", execution.getEndTimeMs());
             }
             return result;
         } catch (Exception e) {
@@ -317,8 +317,8 @@ public class ExecutionApiService {
         workflowMetrics.put("execution_id", execution.getExecutionId());
         workflowMetrics.put("workflow_name", execution.getWorkflowName());
         workflowMetrics.put("status", execution.getStatus());
-        workflowMetrics.put("start_time", execution.getStartTime());
-        workflowMetrics.put("end_time", execution.getEndTime());
+        workflowMetrics.put("start_time", execution.getStartTimeMs());
+        workflowMetrics.put("end_time", execution.getEndTimeMs());
         workflowMetrics.put("total_execution_time_ms", execution.getTotalExecutionTimeMs());
         workflowMetrics.put("total_nodes", execution.getTotalNodes());
         workflowMetrics.put("completed_nodes", execution.getCompletedNodes());
