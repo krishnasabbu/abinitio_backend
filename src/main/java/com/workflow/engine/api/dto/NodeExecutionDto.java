@@ -2,7 +2,6 @@ package com.workflow.engine.api.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.workflow.engine.api.util.TimestampConverter;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class NodeExecutionDto {
@@ -25,10 +24,10 @@ public class NodeExecutionDto {
     private String status;
 
     @JsonProperty("start_time")
-    private String startTime;
+    private Long startTime;
 
     @JsonProperty("end_time")
-    private String endTime;
+    private Long endTime;
 
     @JsonProperty("execution_time_ms")
     private Long executionTimeMs;
@@ -92,16 +91,16 @@ public class NodeExecutionDto {
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
 
-    public String getStartTime() { return startTime; }
-    public void setStartTime(String startTime) { this.startTime = startTime; }
+    public Long getStartTime() { return startTime; }
+    public void setStartTime(Long startTime) { this.startTime = startTime; }
     public void setStartTimeMs(Long startTimeMs) {
-        this.startTime = TimestampConverter.toISO8601(startTimeMs);
+        this.startTime = startTimeMs;
     }
 
-    public String getEndTime() { return endTime; }
-    public void setEndTime(String endTime) { this.endTime = endTime; }
+    public Long getEndTime() { return endTime; }
+    public void setEndTime(Long endTime) { this.endTime = endTime; }
     public void setEndTimeMs(Long endTimeMs) {
-        this.endTime = TimestampConverter.toISO8601(endTimeMs);
+        this.endTime = endTimeMs;
     }
 
     public Long getExecutionTimeMs() { return executionTimeMs; }

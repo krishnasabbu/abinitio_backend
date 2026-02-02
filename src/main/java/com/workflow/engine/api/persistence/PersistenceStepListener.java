@@ -63,8 +63,9 @@ public class PersistenceStepListener implements StepExecutionListener {
             }
 
             long endTime = System.currentTimeMillis();
-            long readCount = stepExecution.getReadCount();
-            long writeCount = stepExecution.getWriteCount();
+            long inputRecords = stepExecution.getReadCount();
+            long outputRecords = stepExecution.getWriteCount();
+            long recordsProcessed = stepExecution.getReadCount();
             String status = mapBatchStatusToNodeStatus(stepExecution.getStatus().toString());
             String errorMessage = null;
 
@@ -78,19 +79,24 @@ public class PersistenceStepListener implements StepExecutionListener {
                     endTime;
             long executionTimeMs = endTime - startTime;
 
-            String updateSql = "UPDATE node_executions SET status = ?, end_time = ?, execution_time_ms = ?, records_processed = ? " +
+            double recordsPerSecond = 0.0;
+            if (executionTimeMs > 0 && recordsProcessed > 0) {
+                recordsPerSecond = (recordsProcessed * 1000.0) / executionTimeMs;
+            }
+
+            String updateSql = "UPDATE node_executions SET status = ?, end_time = ?, execution_time_ms = ?, input_records = ?, output_records = ?, records_processed = ?, records_per_second = ? " +
                     (errorMessage != null ? ", error_message = ? " : "") +
                     "WHERE id = ?";
 
             int rowsUpdated;
             if (errorMessage != null) {
-                rowsUpdated = jdbcTemplate.update(updateSql, status, endTime, executionTimeMs, readCount, errorMessage, nodeExecutionId);
+                rowsUpdated = jdbcTemplate.update(updateSql, status, endTime, executionTimeMs, inputRecords, outputRecords, recordsProcessed, recordsPerSecond, errorMessage, nodeExecutionId);
             } else {
-                rowsUpdated = jdbcTemplate.update(updateSql, status, endTime, executionTimeMs, readCount, nodeExecutionId);
+                rowsUpdated = jdbcTemplate.update(updateSql, status, endTime, executionTimeMs, inputRecords, outputRecords, recordsProcessed, recordsPerSecond, nodeExecutionId);
             }
 
-            logger.info("Node execution completed: node='{}', status='{}', records={}, time={}ms, rowsUpdated={}",
-                stepNode.nodeId(), status, readCount, executionTimeMs, rowsUpdated);
+            logger.info("Node execution completed: node='{}', status='{}', input={}, output={}, time={}ms, rowsUpdated={}",
+                stepNode.nodeId(), status, inputRecords, outputRecords, executionTimeMs, rowsUpdated);
             return stepExecution.getExitStatus();
         } catch (Exception e) {
             logger.error("Error recording step completion for node '{}': {}", stepNode.nodeId(), e.getMessage(), e);

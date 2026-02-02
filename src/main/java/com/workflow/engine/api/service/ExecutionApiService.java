@@ -207,10 +207,9 @@ public class ExecutionApiService {
 
     public List<NodeExecutionDto> getNodeExecutions(String executionId) {
         try {
-            String sql = "SELECT id, execution_id, node_id, node_label, node_type, status, start_time, end_time, execution_time_ms, records_processed, retry_count, error_message FROM node_executions WHERE execution_id = ? ORDER BY start_time ASC";
+            String sql = "SELECT id, execution_id, node_id, node_label, node_type, status, start_time, end_time, execution_time_ms, input_records, output_records, records_processed, input_bytes, output_bytes, records_per_second, bytes_per_second, output_summary, retry_count, error_message FROM node_executions WHERE execution_id = ? ORDER BY start_time ASC";
             List<NodeExecutionDto> result = jdbcTemplate.query(sql, new Object[]{executionId}, (rs, rowNum) -> {
                 NodeExecutionDto dto = new NodeExecutionDto();
-                dto.setExecutionId(rs.getString("execution_id"));
                 dto.setNodeId(rs.getString("node_id"));
                 dto.setNodeLabel(rs.getString("node_label"));
                 dto.setNodeType(rs.getString("node_type"));
@@ -218,27 +217,70 @@ public class ExecutionApiService {
 
                 Long startTimeMs = rs.getLong("start_time");
                 if (startTimeMs > 0) {
-                    dto.setStartTimeMs(startTimeMs);
+                    dto.setStartTime(startTimeMs);
                 }
 
                 Long endTimeMs = rs.getLong("end_time");
                 if (endTimeMs > 0) {
-                    dto.setEndTimeMs(endTimeMs);
+                    dto.setEndTime(endTimeMs);
                 }
 
                 Long executionTimeMs = rs.getLong("execution_time_ms");
                 dto.setExecutionTimeMs(executionTimeMs);
 
+                Long inputRecords = rs.getLong("input_records");
+                if (inputRecords > 0) {
+                    dto.setInputRecords(inputRecords);
+                }
+
+                Long outputRecords = rs.getLong("output_records");
+                if (outputRecords > 0) {
+                    dto.setOutputRecords(outputRecords);
+                }
+
                 Long recordsProc = rs.getLong("records_processed");
                 dto.setRecordsProcessed(recordsProc);
 
-                if (executionTimeMs > 0 && recordsProc != null && recordsProc > 0) {
-                    double recordsPerSecond = (recordsProc * 1000.0) / executionTimeMs;
+                Long inputBytes = rs.getLong("input_bytes");
+                if (inputBytes > 0) {
+                    dto.setInputBytes(inputBytes);
+                }
+
+                Long outputBytes = rs.getLong("output_bytes");
+                if (outputBytes > 0) {
+                    dto.setOutputBytes(outputBytes);
+                }
+
+                Double recordsPerSecond = (Double) rs.getObject("records_per_second");
+                if (recordsPerSecond != null && recordsPerSecond > 0) {
                     dto.setRecordsPerSecond(recordsPerSecond);
+                } else if (executionTimeMs > 0 && recordsProc != null && recordsProc > 0) {
+                    double calculated = (recordsProc * 1000.0) / executionTimeMs;
+                    dto.setRecordsPerSecond(calculated);
+                }
+
+                Double bytesPerSecond = (Double) rs.getObject("bytes_per_second");
+                if (bytesPerSecond != null && bytesPerSecond > 0) {
+                    dto.setBytesPerSecond(bytesPerSecond);
+                }
+
+                String outputSummary = rs.getString("output_summary");
+                if (outputSummary != null) {
+                    try {
+                        dto.setOutputSummary(new ObjectMapper().readValue(outputSummary, Object.class));
+                    } catch (Exception e) {
+                        dto.setOutputSummary(outputSummary);
+                    }
                 }
 
                 dto.setRetryCount(rs.getInt("retry_count"));
                 dto.setErrorMessage(rs.getString("error_message"));
+
+                List<String> logs = getNodeLogs(executionId, dto.getNodeId());
+                if (!logs.isEmpty()) {
+                    dto.setLogs(logs);
+                }
+
                 return dto;
             });
 
@@ -246,6 +288,16 @@ public class ExecutionApiService {
             return result;
         } catch (Exception e) {
             logger.error("Error retrieving node executions for executionId: {}", executionId, e);
+            return new ArrayList<>();
+        }
+    }
+
+    private List<String> getNodeLogs(String executionId, String nodeId) {
+        try {
+            String sql = "SELECT message FROM execution_logs WHERE execution_id = ? AND node_id = ? ORDER BY timestamp ASC";
+            return jdbcTemplate.queryForList(sql, new Object[]{executionId, nodeId}, String.class);
+        } catch (Exception e) {
+            logger.error("Error retrieving logs for node: {} in execution: {}", nodeId, executionId, e);
             return new ArrayList<>();
         }
     }
