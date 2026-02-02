@@ -40,6 +40,8 @@ public class WorkflowDefinition {
     @JsonIgnore
     private String id;
 
+    private String workflowId;
+
     /** Human-readable name for this workflow */
     private String name;
 

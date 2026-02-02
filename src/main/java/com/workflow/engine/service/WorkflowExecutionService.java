@@ -220,7 +220,7 @@ public class WorkflowExecutionService {
     private void persistWorkflowExecutionRecord(String executionId, WorkflowDefinition workflow, long startTime, int totalNodes) {
         try {
             String id = UUID.randomUUID().toString();
-            String workflowId = workflow.getId() != null ? workflow.getId() : "workflow_" + UUID.randomUUID().toString().substring(0, 8);
+            String workflowId = workflow.getWorkflowId() != null ? workflow.getWorkflowId() : "workflow_" + UUID.randomUUID().toString().substring(0, 8);
             String sql = "INSERT INTO workflow_executions (id, execution_id, workflow_name, workflow_id, status, start_time, total_nodes) " +
                     "VALUES (?, ?, ?, ?, ?, ?, ?)";
 
