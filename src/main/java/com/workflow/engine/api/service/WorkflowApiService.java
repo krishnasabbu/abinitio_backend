@@ -118,7 +118,9 @@ public class WorkflowApiService {
                 "SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_executions, " +
                 "AVG(total_execution_time_ms) AS avg_duration, " +
                 "MAX(total_execution_time_ms) AS max_duration, " +
-                "MIN(total_execution_time_ms) AS min_duration " +
+                "MIN(total_execution_time_ms) AS min_duration, " +
+                "AVG(total_records) AS avg_records, " +
+                "SUM(total_records) AS total_records " +
                 "FROM workflow_executions WHERE workflow_id = ?";
 
         List<Map<String, Object>> queryResult = jdbcTemplate.queryForList(sql, workflowId);
@@ -141,6 +143,19 @@ public class WorkflowApiService {
         result.put("avg_duration", row.get("avg_duration"));
         result.put("min_duration", row.get("min_duration"));
         result.put("max_duration", row.get("max_duration"));
+
+        Number avgRecords = (Number) row.get("avg_records");
+        result.put("avg_records", avgRecords != null ? avgRecords.longValue() : 0);
+
+        double avgThroughput = 0.0;
+        Long totalRecords = row.get("total_records") != null ? ((Number) row.get("total_records")).longValue() : 0;
+        if (totalExecutions > 0 && totalRecords > 0) {
+            Long avgDurationMs = row.get("avg_duration") != null ? ((Number) row.get("avg_duration")).longValue() : 0;
+            if (avgDurationMs > 0) {
+                avgThroughput = (totalRecords.doubleValue() / totalExecutions) / (avgDurationMs / 1000.0);
+            }
+        }
+        result.put("avg_throughput", avgThroughput);
 
         return result;
     }

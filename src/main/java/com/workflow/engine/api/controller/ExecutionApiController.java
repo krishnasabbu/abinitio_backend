@@ -64,8 +64,10 @@ public class ExecutionApiController {
     @ApiResponse(responseCode = "200", description = "Execution history retrieved successfully")
     public ResponseEntity<List<WorkflowExecutionDto>> getExecutionHistory(
             @Parameter(description = "Filter by workflow ID")
-            @RequestParam(required = false) String workflow_id) {
-        List<WorkflowExecutionDto> executions = executionApiService.getExecutionHistory(workflow_id);
+            @RequestParam(required = false) String workflow_id,
+            @Parameter(description = "Limit number of results")
+            @RequestParam(required = false, defaultValue = "50") int limit) {
+        List<WorkflowExecutionDto> executions = executionApiService.getExecutionHistory(workflow_id, limit);
         return ResponseEntity.ok(executions);
     }
 

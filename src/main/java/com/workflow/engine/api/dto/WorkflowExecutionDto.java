@@ -2,7 +2,6 @@ package com.workflow.engine.api.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.workflow.engine.api.util.TimestampConverter;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class WorkflowExecutionDto {
@@ -12,6 +11,9 @@ public class WorkflowExecutionDto {
     @JsonProperty("execution_id")
     private String executionId;
 
+    @JsonProperty("name")
+    private String name;
+
     @JsonProperty("workflow_name")
     private String workflowName;
 
@@ -19,13 +21,19 @@ public class WorkflowExecutionDto {
     private String status;
 
     @JsonProperty("start_time")
-    private String startTime;
+    private Long startTimeMs;
 
     @JsonProperty("end_time")
-    private String endTime;
+    private Long endTimeMs;
+
+    @JsonProperty("execution_time_ms")
+    private Long executionTimeMs;
 
     @JsonProperty("total_nodes")
     private Integer totalNodes;
+
+    @JsonProperty("successful_nodes")
+    private Integer successfulNodes;
 
     @JsonProperty("completed_nodes")
     private Integer completedNodes;
@@ -74,26 +82,29 @@ public class WorkflowExecutionDto {
     public String getExecutionId() { return executionId; }
     public void setExecutionId(String executionId) { this.executionId = executionId; }
 
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+
     public String getWorkflowName() { return workflowName; }
     public void setWorkflowName(String workflowName) { this.workflowName = workflowName; }
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
 
-    public String getStartTime() { return startTime; }
-    public void setStartTime(String startTime) { this.startTime = startTime; }
-    public void setStartTimeMs(Long startTimeMs) {
-        this.startTime = TimestampConverter.toISO8601(startTimeMs);
-    }
+    public Long getStartTimeMs() { return startTimeMs; }
+    public void setStartTimeMs(Long startTimeMs) { this.startTimeMs = startTimeMs; }
 
-    public String getEndTime() { return endTime; }
-    public void setEndTime(String endTime) { this.endTime = endTime; }
-    public void setEndTimeMs(Long endTimeMs) {
-        this.endTime = TimestampConverter.toISO8601(endTimeMs);
-    }
+    public Long getEndTimeMs() { return endTimeMs; }
+    public void setEndTimeMs(Long endTimeMs) { this.endTimeMs = endTimeMs; }
+
+    public Long getExecutionTimeMs() { return executionTimeMs; }
+    public void setExecutionTimeMs(Long executionTimeMs) { this.executionTimeMs = executionTimeMs; }
 
     public Integer getTotalNodes() { return totalNodes; }
     public void setTotalNodes(Integer totalNodes) { this.totalNodes = totalNodes; }
+
+    public Integer getSuccessfulNodes() { return successfulNodes; }
+    public void setSuccessfulNodes(Integer successfulNodes) { this.successfulNodes = successfulNodes; }
 
     public Integer getCompletedNodes() { return completedNodes; }
     public void setCompletedNodes(Integer completedNodes) { this.completedNodes = completedNodes; }
@@ -112,9 +123,6 @@ public class WorkflowExecutionDto {
 
     public String getPlanningStartTime() { return planningStartTime; }
     public void setPlanningStartTime(String planningStartTime) { this.planningStartTime = planningStartTime; }
-    public void setPlanningStartTimeMs(Long planningStartTimeMs) {
-        this.planningStartTime = TimestampConverter.toISO8601(planningStartTimeMs);
-    }
 
     public Integer getMaxParallelNodes() { return maxParallelNodes; }
     public void setMaxParallelNodes(Integer maxParallelNodes) { this.maxParallelNodes = maxParallelNodes; }

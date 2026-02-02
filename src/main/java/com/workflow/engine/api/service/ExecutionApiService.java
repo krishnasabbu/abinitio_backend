@@ -185,18 +185,22 @@ public class ExecutionApiService {
         return response;
     }
 
-    public List<WorkflowExecutionDto> getExecutionHistory(String workflowId) {
-        String sql = "SELECT id, execution_id, workflow_name, status, start_time, end_time, total_nodes, completed_nodes, failed_nodes, total_records, total_execution_time_ms, execution_mode, error_message FROM workflow_executions";
+    public List<WorkflowExecutionDto> getExecutionHistory(String workflowId, int limit) {
+        String sql = "SELECT id, execution_id, workflow_name, status, start_time, end_time, total_nodes, completed_nodes, successful_nodes, failed_nodes, total_records, total_execution_time_ms, execution_mode, error_message FROM workflow_executions";
         if (workflowId != null && !workflowId.isEmpty()) {
-            sql += " WHERE workflow_id = ? ORDER BY start_time DESC";
-            return jdbcTemplate.query(sql, new Object[]{workflowId}, this::mapExecutionDto);
+            sql += " WHERE workflow_id = ? ORDER BY start_time DESC LIMIT ?";
+            return jdbcTemplate.query(sql, new Object[]{workflowId, limit}, this::mapExecutionDto);
         }
-        sql += " ORDER BY start_time DESC";
-        return jdbcTemplate.query(sql, this::mapExecutionDto);
+        sql += " ORDER BY start_time DESC LIMIT ?";
+        return jdbcTemplate.query(sql, new Object[]{limit}, this::mapExecutionDto);
+    }
+
+    public List<WorkflowExecutionDto> getExecutionHistory(String workflowId) {
+        return getExecutionHistory(workflowId, 50);
     }
 
     public WorkflowExecutionDto getExecutionById(String executionId) {
-        String sql = "SELECT id, execution_id, workflow_name, status, start_time, end_time, total_nodes, completed_nodes, failed_nodes, total_records, total_execution_time_ms, execution_mode, error_message FROM workflow_executions WHERE execution_id = ?";
+        String sql = "SELECT id, execution_id, workflow_name, status, start_time, end_time, total_nodes, completed_nodes, successful_nodes, failed_nodes, total_records, total_execution_time_ms, execution_mode, error_message FROM workflow_executions WHERE execution_id = ?";
         List<WorkflowExecutionDto> result = jdbcTemplate.query(sql, new Object[]{executionId}, this::mapExecutionDto);
         return result.isEmpty() ? null : result.get(0);
     }
@@ -565,7 +569,7 @@ public class ExecutionApiService {
     }
 
     public Map<String, Object> getRecentExecutions(int limit) {
-        String sql = "SELECT id, execution_id, workflow_name, status, start_time, end_time, total_nodes, completed_nodes, failed_nodes, total_records, total_execution_time_ms, execution_mode, error_message FROM workflow_executions ORDER BY start_time DESC LIMIT ?";
+        String sql = "SELECT id, execution_id, workflow_name, status, start_time, end_time, total_nodes, completed_nodes, successful_nodes, failed_nodes, total_records, total_execution_time_ms, execution_mode, error_message FROM workflow_executions ORDER BY start_time DESC LIMIT ?";
         List<WorkflowExecutionDto> executions = jdbcTemplate.query(sql, new Object[]{limit}, this::mapExecutionDto);
         return Map.of("executions", executions);
     }
@@ -573,7 +577,11 @@ public class ExecutionApiService {
     private WorkflowExecutionDto mapExecutionDto(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
         WorkflowExecutionDto dto = new WorkflowExecutionDto();
         dto.setExecutionId(rs.getString("execution_id"));
-        dto.setWorkflowName(rs.getString("workflow_name"));
+
+        String workflowName = rs.getString("workflow_name");
+        dto.setWorkflowName(workflowName);
+        dto.setName(workflowName);
+
         dto.setStatus(rs.getString("status"));
 
         Long startTimeMs = rs.getLong("start_time");
@@ -586,11 +594,24 @@ public class ExecutionApiService {
             dto.setEndTimeMs(endTimeMs);
         }
 
+        Long totalExecutionTimeMs = rs.getLong("total_execution_time_ms");
+        dto.setTotalExecutionTimeMs(totalExecutionTimeMs);
+        dto.setExecutionTimeMs(totalExecutionTimeMs);
+
         dto.setTotalNodes(rs.getInt("total_nodes"));
         dto.setCompletedNodes(rs.getInt("completed_nodes"));
+
+        int successfulNodes = rs.getInt("successful_nodes");
+        if (successfulNodes > 0) {
+            dto.setSuccessfulNodes(successfulNodes);
+        }
+
         dto.setFailedNodes(rs.getInt("failed_nodes"));
-        dto.setTotalRecordsProcessed(rs.getLong("total_records"));
-        dto.setTotalExecutionTimeMs(rs.getLong("total_execution_time_ms"));
+
+        Long totalRecords = rs.getLong("total_records");
+        dto.setTotalRecordsProcessed(totalRecords);
+        dto.setTotalInputRecords(totalRecords);
+        dto.setTotalOutputRecords(totalRecords);
 
         String executionMode = rs.getString("execution_mode");
         if (executionMode != null) {
