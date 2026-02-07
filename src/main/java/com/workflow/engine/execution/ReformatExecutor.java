@@ -70,6 +70,7 @@ public class ReformatExecutor implements NodeExecutor<Map<String, Object>, Map<S
         }
 
         return item -> {
+            logger.debug("Reformat processor input: {}", item);
             Map<String, Object> result = new LinkedHashMap<>(item);
 
             for (Map<String, Object> operation : operations) {
@@ -96,6 +97,7 @@ public class ReformatExecutor implements NodeExecutor<Map<String, Object>, Map<S
                 }
             }
 
+            logger.debug("Reformat processor output: {}", result);
             return result;
         };
     }
@@ -104,16 +106,36 @@ public class ReformatExecutor implements NodeExecutor<Map<String, Object>, Map<S
         String from = (String) operation.get("from");
         String to = (String) operation.get("to");
 
-        if (from == null || to == null) {
-            throw new IllegalArgumentException("Map operation requires 'from' and 'to' fields");
+        if (from != null && to != null) {
+            Object value = result.get(from);
+            result.put(to, value);
+            if (!from.equals(to)) {
+                result.remove(from);
+            }
+            return;
         }
 
-        Object value = result.get(from);
-        result.put(to, value);
+        String field = (String) operation.get("field");
+        String expr = (String) operation.get("expr");
 
-        if (!from.equals(to)) {
-            result.remove(from);
+        if (field != null && expr != null) {
+            if (result.containsKey(expr)) {
+                result.put(field, result.get(expr));
+            } else {
+                try {
+                    StandardEvaluationContext evalContext = new StandardEvaluationContext(result);
+                    Object value = parser.parseExpression(expr).getValue(evalContext);
+                    result.put(field, value);
+                } catch (Exception e) {
+                    logger.warn("Map expression '{}' evaluation failed for field '{}': {}", expr, field, e.getMessage());
+                    result.put(field, null);
+                }
+            }
+            return;
         }
+
+        throw new IllegalArgumentException(
+            "Map operation requires either 'from'/'to' or 'field'/'expr' fields, got: " + operation.keySet());
     }
 
     private void applyDeriveOperation(Map<String, Object> result, Map<String, Object> operation) {
@@ -248,12 +270,17 @@ public class ReformatExecutor implements NodeExecutor<Map<String, Object>, Map<S
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
+        String nodeId = context.getNodeDefinition().getId();
         return items -> {
             List<Map<String, Object>> outputList = new ArrayList<>();
             for (Map<String, Object> item : items) {
                 if (item != null) {
                     outputList.add(item);
                 }
+            }
+            logger.info("Reformat node {} writing {} items to routing context", nodeId, outputList.size());
+            if (logger.isDebugEnabled() && !outputList.isEmpty()) {
+                logger.debug("Reformat node {} first output record: {}", nodeId, outputList.get(0));
             }
             context.setVariable("outputItems", outputList);
         };
