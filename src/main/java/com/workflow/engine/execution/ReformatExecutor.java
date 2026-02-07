@@ -69,6 +69,20 @@ public class ReformatExecutor implements NodeExecutor<Map<String, Object>, Map<S
             throw new IllegalArgumentException("Failed to parse operations JSON: " + e.getMessage(), e);
         }
 
+        boolean allMaps = operations.stream().allMatch(op -> "map".equals(op.get("op")));
+        Set<String> projectedTargets = new LinkedHashSet<>();
+        if (allMaps) {
+            for (Map<String, Object> op : operations) {
+                String to = (String) op.get("to");
+                if (to != null) {
+                    projectedTargets.add(to);
+                } else {
+                    String field = (String) op.get("field");
+                    if (field != null) projectedTargets.add(field);
+                }
+            }
+        }
+
         return item -> {
             logger.debug("Reformat processor input: {}", item);
             Map<String, Object> result = new LinkedHashMap<>(item);
@@ -97,6 +111,10 @@ public class ReformatExecutor implements NodeExecutor<Map<String, Object>, Map<S
                 }
             }
 
+            if (!projectedTargets.isEmpty()) {
+                result.keySet().retainAll(projectedTargets);
+            }
+
             logger.debug("Reformat processor output: {}", result);
             return result;
         };
@@ -105,6 +123,12 @@ public class ReformatExecutor implements NodeExecutor<Map<String, Object>, Map<S
     private void applyMapOperation(Map<String, Object> result, Map<String, Object> operation) {
         String from = (String) operation.get("from");
         String to = (String) operation.get("to");
+        String field = (String) operation.get("field");
+        String expr = (String) operation.get("expr");
+
+        if (from == null && field != null && to != null) {
+            from = field;
+        }
 
         if (from != null && to != null) {
             Object value = result.get(from);
@@ -114,9 +138,6 @@ public class ReformatExecutor implements NodeExecutor<Map<String, Object>, Map<S
             }
             return;
         }
-
-        String field = (String) operation.get("field");
-        String expr = (String) operation.get("expr");
 
         if (field != null && expr != null) {
             if (result.containsKey(expr)) {
@@ -135,7 +156,7 @@ public class ReformatExecutor implements NodeExecutor<Map<String, Object>, Map<S
         }
 
         throw new IllegalArgumentException(
-            "Map operation requires either 'from'/'to' or 'field'/'expr' fields, got: " + operation.keySet());
+            "Map operation requires either 'from'/'to', 'field'/'to', or 'field'/'expr' fields, got: " + operation.keySet());
     }
 
     private void applyDeriveOperation(Map<String, Object> result, Map<String, Object> operation) {
