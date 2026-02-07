@@ -2,7 +2,7 @@ package com.workflow.engine.api.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.workflow.engine.api.util.DelimitedDataTransformer;
-import com.workflow.engine.execution.NodeExecutionContext;
+import com.workflow.engine.execution.job.OutputCollectingWriter;
 import com.workflow.engine.graph.StepNode;
 import com.workflow.engine.repository.NodeOutputDataRepository;
 import org.springframework.batch.core.StepExecution;
@@ -25,7 +25,7 @@ public class PersistenceStepListener implements StepExecutionListener {
     private final JdbcTemplate jdbcTemplate;
     private final StepNode stepNode;
     private final String executionId;
-    private final NodeExecutionContext nodeContext;
+    private final OutputCollectingWriter<?> collectingWriter;
     private final NodeOutputDataRepository outputDataRepository;
 
     public PersistenceStepListener(JdbcTemplate jdbcTemplate, StepNode stepNode, String executionId) {
@@ -33,11 +33,11 @@ public class PersistenceStepListener implements StepExecutionListener {
     }
 
     public PersistenceStepListener(JdbcTemplate jdbcTemplate, StepNode stepNode, String executionId,
-                                    NodeExecutionContext nodeContext, NodeOutputDataRepository outputDataRepository) {
+                                    OutputCollectingWriter<?> collectingWriter, NodeOutputDataRepository outputDataRepository) {
         this.jdbcTemplate = jdbcTemplate;
         this.stepNode = stepNode;
         this.executionId = executionId;
-        this.nodeContext = nodeContext;
+        this.collectingWriter = collectingWriter;
         this.outputDataRepository = outputDataRepository;
     }
 
@@ -123,19 +123,13 @@ public class PersistenceStepListener implements StepExecutionListener {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private void persistOutputData(String nodeId, String nodeType) {
-        if (nodeContext == null || outputDataRepository == null) {
+        if (collectingWriter == null || outputDataRepository == null) {
             return;
         }
 
         try {
-            Object outputObj = nodeContext.getVariable("outputItems");
-            if (!(outputObj instanceof List)) {
-                return;
-            }
-
-            List<Map<String, Object>> outputItems = (List<Map<String, Object>>) outputObj;
+            List<Map<String, Object>> outputItems = collectingWriter.getCollectedItems();
             if (outputItems.isEmpty()) {
                 return;
             }

@@ -107,6 +107,11 @@ public class StepFactory {
         ItemProcessor processor = executor.createProcessor(context);
         ItemWriter writer = executor.createWriter(context);
 
+        OutputCollectingWriter collectingWriter = null;
+        if (this.jdbcTemplate != null && executionId != null && outputDataRepository != null) {
+            collectingWriter = new OutputCollectingWriter(writer);
+        }
+
         int chunkSize = determineChunkSize(stepNode);
 
         StepBuilder stepBuilder = new StepBuilder(stepNode.nodeId(), jobRepository);
@@ -115,7 +120,7 @@ public class StepFactory {
             .chunk(chunkSize, transactionManager)
             .reader(reader)
             .processor(processor)
-            .writer(writer);
+            .writer(collectingWriter != null ? collectingWriter : writer);
 
         if (stepNode.metrics() != null && stepNode.metrics().isEnabled()) {
             MetricsCollectionListener listener = new MetricsCollectionListener(
@@ -135,7 +140,7 @@ public class StepFactory {
                 this.jdbcTemplate,
                 stepNode,
                 executionId,
-                context,
+                collectingWriter,
                 outputDataRepository
             );
             chunkBuilder.listener(persistenceListener);
