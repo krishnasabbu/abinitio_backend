@@ -62,6 +62,19 @@ CREATE TABLE IF NOT EXISTS node_executions (
 CREATE INDEX IF NOT EXISTS idx_node_exec_execution_id ON node_executions(execution_id);
 CREATE INDEX IF NOT EXISTS idx_node_exec_node_id ON node_executions(node_id);
 
+-- Schema evolution: ensure columns exist for file-based H2 databases from older versions
+ALTER TABLE node_executions ADD COLUMN IF NOT EXISTS input_records BIGINT DEFAULT 0;
+ALTER TABLE node_executions ADD COLUMN IF NOT EXISTS output_records BIGINT DEFAULT 0;
+ALTER TABLE node_executions ADD COLUMN IF NOT EXISTS records_processed BIGINT;
+ALTER TABLE node_executions ADD COLUMN IF NOT EXISTS records_per_second DOUBLE;
+ALTER TABLE node_executions ADD COLUMN IF NOT EXISTS input_bytes BIGINT;
+ALTER TABLE node_executions ADD COLUMN IF NOT EXISTS output_bytes BIGINT;
+ALTER TABLE node_executions ADD COLUMN IF NOT EXISTS bytes_per_second DOUBLE;
+ALTER TABLE node_executions ADD COLUMN IF NOT EXISTS output_summary CLOB;
+ALTER TABLE node_executions ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;
+ALTER TABLE node_executions ADD COLUMN IF NOT EXISTS error_message TEXT;
+ALTER TABLE node_executions ADD COLUMN IF NOT EXISTS execution_time_ms BIGINT;
+
 -- Logs Domain
 CREATE TABLE IF NOT EXISTS execution_logs (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,

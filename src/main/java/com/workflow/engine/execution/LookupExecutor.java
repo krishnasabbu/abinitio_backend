@@ -55,30 +55,28 @@ public class LookupExecutor implements NodeExecutor<Map<String, Object>, Map<Str
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
         JsonNode config = context.getNodeDefinition().getConfig();
         String joinKeysStr = config.has("joinKeys") ? config.get("joinKeys").asText() : "";
-        boolean cacheEnabled = config.has("cacheSize") && config.get("cacheSize").asInt() > 0;
 
         List<String> joinKeys = parseArray(joinKeysStr);
 
-        List<Map<String, Object>> tempLookupItems;
-        if (context instanceof RoutingNodeExecutionContext) {
-            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
-            String executionId = routingCtx.getRoutingContext().getExecutionId();
-            String nodeId = context.getNodeDefinition().getId();
-            EdgeBufferStore bufferStore = routingCtx.getRoutingContext().getBufferStore();
-
-            tempLookupItems = bufferStore.getRecords(executionId, nodeId, "lookup");
-            logger.debug("Lookup node {} read {} lookup items from EdgeBufferStore port 'lookup'", nodeId, tempLookupItems.size());
-        } else {
-            tempLookupItems = (List<Map<String, Object>>) context.getVariable("lookupInputItems");
-            if (tempLookupItems == null) {
-                tempLookupItems = new ArrayList<>();
-            }
-        }
-        final List<Map<String, Object>> lookupItems = tempLookupItems;
-
-        Map<String, Map<String, Object>> lookupIndex = buildIndex(lookupItems, joinKeys);
-
         return items -> {
+            List<Map<String, Object>> lookupItems;
+            if (context instanceof RoutingNodeExecutionContext) {
+                RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+                String executionId = routingCtx.getRoutingContext().getExecutionId();
+                String nodeId = context.getNodeDefinition().getId();
+                EdgeBufferStore bufferStore = routingCtx.getRoutingContext().getBufferStore();
+
+                lookupItems = bufferStore.getRecords(executionId, nodeId, "lookup");
+                logger.info("Lookup node {} read {} lookup items from EdgeBufferStore port 'lookup'", nodeId, lookupItems.size());
+            } else {
+                lookupItems = (List<Map<String, Object>>) context.getVariable("lookupInputItems");
+                if (lookupItems == null) {
+                    lookupItems = new ArrayList<>();
+                }
+            }
+
+            Map<String, Map<String, Object>> lookupIndex = buildIndex(lookupItems, joinKeys);
+
             List<Map<String, Object>> outputItems = new ArrayList<>();
             List<Map<String, Object>> missItems = new ArrayList<>();
 
@@ -109,6 +107,8 @@ public class LookupExecutor implements NodeExecutor<Map<String, Object>, Map<Str
                 outputItems.add(enriched);
             }
 
+            logger.info("Lookup produced {} output items ({} misses, {} lookup records)",
+                outputItems.size(), missItems.size(), lookupItems.size());
             context.setVariable("outputItems", outputItems);
             context.setVariable("missItems", missItems);
         };

@@ -61,25 +61,25 @@ public class JoinExecutor implements NodeExecutor<Map<String, Object>, Map<Strin
         List<String> leftKeys = parseArray(leftKeysStr);
         List<String> rightKeys = parseArray(rightKeysStr);
 
-        List<Map<String, Object>> rightItems;
-        if (context instanceof RoutingNodeExecutionContext) {
-            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
-            String executionId = routingCtx.getRoutingContext().getExecutionId();
-            String nodeId = context.getNodeDefinition().getId();
-            EdgeBufferStore bufferStore = routingCtx.getRoutingContext().getBufferStore();
-
-            rightItems = bufferStore.getRecords(executionId, nodeId, "right");
-            logger.debug("Join node {} read {} right items from EdgeBufferStore port 'right'", nodeId, rightItems.size());
-        } else {
-            rightItems = (List<Map<String, Object>>) context.getVariable("rightInputItems");
-            if (rightItems == null) {
-                rightItems = new ArrayList<>();
-            }
-        }
-
-        Map<String, Map<String, Object>> rightIndex = buildIndex(rightItems, rightKeys);
-
         return items -> {
+            List<Map<String, Object>> rightItems;
+            if (context instanceof RoutingNodeExecutionContext) {
+                RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+                String executionId = routingCtx.getRoutingContext().getExecutionId();
+                String nodeId = context.getNodeDefinition().getId();
+                EdgeBufferStore bufferStore = routingCtx.getRoutingContext().getBufferStore();
+
+                rightItems = bufferStore.getRecords(executionId, nodeId, "right");
+                logger.info("Join node {} read {} right items from EdgeBufferStore port 'right'", nodeId, rightItems.size());
+            } else {
+                rightItems = (List<Map<String, Object>>) context.getVariable("rightInputItems");
+                if (rightItems == null) {
+                    rightItems = new ArrayList<>();
+                }
+            }
+
+            Map<String, Map<String, Object>> rightIndex = buildIndex(rightItems, rightKeys);
+
             List<Map<String, Object>> outputItems = new ArrayList<>();
 
             for (Map<String, Object> leftItem : items) {
@@ -101,9 +101,6 @@ public class JoinExecutor implements NodeExecutor<Map<String, Object>, Map<Strin
                 } else {
                     if ("left".equals(joinType) || "full".equals(joinType)) {
                         Map<String, Object> nullJoined = new LinkedHashMap<>(leftItem);
-                        for (String key : rightItem != null ? rightItem.keySet() : new ArrayList<String>()) {
-                            nullJoined.put(key, null);
-                        }
                         outputItems.add(nullJoined);
                     }
                 }
@@ -129,6 +126,8 @@ public class JoinExecutor implements NodeExecutor<Map<String, Object>, Map<Strin
                 }
             }
 
+            logger.info("Join produced {} output items (joinType={}, leftItems={}, rightItems={})",
+                outputItems.size(), joinType, ((List<?>) items).size(), rightItems.size());
             context.setVariable("outputItems", outputItems);
         };
     }
