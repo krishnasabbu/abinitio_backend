@@ -56,6 +56,7 @@ public class AuditExecutor implements NodeExecutor<Map<String, Object>, Map<Stri
         JsonNode config = context.getNodeDefinition().getConfig();
         String auditFieldsStr = config.has("auditFields") ? config.get("auditFields").asText() : "";
         String target = config.has("target") ? config.get("target").asText() : "LOG";
+        String nodeId = context.getNodeDefinition().getId();
 
         List<String> auditFields = parseArray(auditFieldsStr);
 
@@ -73,7 +74,7 @@ public class AuditExecutor implements NodeExecutor<Map<String, Object>, Map<Stri
 
                     Map<String, Object> auditRecord = new LinkedHashMap<>();
                     auditRecord.put("timestamp", System.currentTimeMillis());
-                    auditRecord.put("nodeId", context.getNodeDefinition().getId());
+                    auditRecord.put("nodeId", nodeId);
 
                     if (auditFields.isEmpty()) {
                         auditRecord.put("data", item);
@@ -91,12 +92,12 @@ public class AuditExecutor implements NodeExecutor<Map<String, Object>, Map<Stri
                 } catch (UnsupportedOperationException e) {
                     throw e;
                 } catch (Exception e) {
-                    logger.error("Failed to emit audit record", e);
+                    logger.error("nodeId={}, Failed to emit audit record", nodeId, e);
                     throw new RuntimeException("Audit failed: " + e.getMessage(), e);
                 }
             }
 
-            logger.info("Audit writer processed {} items", outputItems.size());
+            logger.info("nodeId={}, Audit writing {} items to routing context", nodeId, outputItems.size());
             context.setVariable("outputItems", outputItems);
         };
     }

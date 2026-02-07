@@ -53,14 +53,14 @@ public class ResumeExecutor implements NodeExecutor<Map<String, Object>, Map<Str
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
         JsonNode config = context.getNodeDefinition().getConfig();
         String checkpointId = config.has("checkpointId") ? config.get("checkpointId").asText() : "";
+        String nodeId = context.getNodeDefinition().getId();
 
         return items -> {
-            logger.info("ResumeExecutor writing {} items", items.getItems().size());
             List<Map<String, Object>> outputItems = new ArrayList<>();
-
             for (Map<String, Object> item : items) {
-                if (item == null) continue;
-                outputItems.add(item);
+                if (item != null) {
+                    outputItems.add(item);
+                }
             }
 
             try {
@@ -71,12 +71,13 @@ public class ResumeExecutor implements NodeExecutor<Map<String, Object>, Map<Str
                     throw new IllegalStateException("Checkpoint not found: " + checkpointId);
                 }
 
-                logger.debug("Resume: execution continuing from checkpoint {}", checkpointId);
+                logger.debug("nodeId={}, Resume continuing from checkpoint {}", nodeId, checkpointId);
             } catch (Exception e) {
-                logger.error("Failed to resume from checkpoint: {}", checkpointId, e);
+                logger.error("nodeId={}, Failed to resume from checkpoint: {}", nodeId, checkpointId, e);
                 throw new RuntimeException("Resume failed: " + e.getMessage(), e);
             }
 
+            logger.info("nodeId={}, Resume writing {} items to routing context", nodeId, outputItems.size());
             context.setVariable("outputItems", outputItems);
         };
     }

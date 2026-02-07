@@ -55,13 +55,14 @@ public class CheckpointExecutor implements NodeExecutor<Map<String, Object>, Map
         JsonNode config = context.getNodeDefinition().getConfig();
         String checkpointId = config.has("checkpointId") ? config.get("checkpointId").asText() : "";
         String scope = config.has("scope") ? config.get("scope").asText() : "step";
+        String nodeId = context.getNodeDefinition().getId();
 
         return items -> {
             List<Map<String, Object>> outputItems = new ArrayList<>();
-
             for (Map<String, Object> item : items) {
-                if (item == null) continue;
-                outputItems.add(item);
+                if (item != null) {
+                    outputItems.add(item);
+                }
             }
 
             try {
@@ -82,13 +83,13 @@ public class CheckpointExecutor implements NodeExecutor<Map<String, Object>, Map
                 }
 
                 context.setVariable(checkpointKey, checkpointData);
-                logger.debug("Checkpoint persisted: {} with {} records", checkpointId, outputItems.size());
+                logger.debug("nodeId={}, Checkpoint persisted: {} with {} records", nodeId, checkpointId, outputItems.size());
             } catch (Exception e) {
-                logger.error("Failed to persist checkpoint: {}", checkpointId, e);
+                logger.error("nodeId={}, Failed to persist checkpoint: {}", nodeId, checkpointId, e);
                 throw new RuntimeException("Checkpoint persistence failed: " + e.getMessage(), e);
             }
 
-            logger.info("Checkpoint writer processed {} items", outputItems.size());
+            logger.info("nodeId={}, Checkpoint writing {} items to routing context", nodeId, outputItems.size());
             context.setVariable("outputItems", outputItems);
         };
     }

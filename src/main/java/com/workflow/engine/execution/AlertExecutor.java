@@ -55,13 +55,14 @@ public class AlertExecutor implements NodeExecutor<Map<String, Object>, Map<Stri
         String alertType = config.has("alertType") ? config.get("alertType").asText() : "LOG";
         String messageTemplate = config.has("messageTemplate") ? config.get("messageTemplate").asText() : "";
         String trigger = config.has("trigger") ? config.get("trigger").asText() : "ALWAYS";
+        String nodeId = context.getNodeDefinition().getId();
 
         return items -> {
             List<Map<String, Object>> outputItems = new ArrayList<>();
-
             for (Map<String, Object> item : items) {
-                if (item == null) continue;
-                outputItems.add(item);
+                if (item != null) {
+                    outputItems.add(item);
+                }
             }
 
             try {
@@ -71,18 +72,18 @@ public class AlertExecutor implements NodeExecutor<Map<String, Object>, Map<Stri
 
                 if ("ALWAYS".equalsIgnoreCase(trigger) || "ON_SUCCESS".equalsIgnoreCase(trigger)) {
                     String message = interpolateTemplate(messageTemplate, context);
-                    logger.info("ALERT: {}", message);
+                    logger.info("nodeId={}, ALERT: {}", nodeId, message);
                 } else if ("ON_FAILURE".equalsIgnoreCase(trigger)) {
-                    logger.debug("Alert trigger is ON_FAILURE but execution succeeded, skipping alert");
+                    logger.debug("nodeId={}, Alert trigger is ON_FAILURE but execution succeeded, skipping alert", nodeId);
                 }
             } catch (UnsupportedOperationException e) {
                 throw e;
             } catch (Exception e) {
-                logger.error("Failed to emit alert", e);
+                logger.error("nodeId={}, Failed to emit alert", nodeId, e);
                 throw new RuntimeException("Alert emission failed: " + e.getMessage(), e);
             }
 
-            logger.info("Alert writer processed {} items", outputItems.size());
+            logger.info("nodeId={}, Alert writing {} items to routing context", nodeId, outputItems.size());
             context.setVariable("outputItems", outputItems);
         };
     }

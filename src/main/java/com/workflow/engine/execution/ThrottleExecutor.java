@@ -89,25 +89,26 @@ public class ThrottleExecutor implements NodeExecutor<Map<String, Object>, Map<S
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
+        String nodeId = context.getNodeDefinition().getId();
         return items -> {
             List<Map<String, Object>> outputItems = new ArrayList<>();
-
             for (Map<String, Object> item : items) {
-                if (item == null) continue;
-                outputItems.add(item);
+                if (item != null) {
+                    outputItems.add(item);
+                }
             }
 
             try {
                 ThrottleState state = throttleState.get();
                 if (state != null) {
                     long count = state.recordCount.get();
-                    logger.debug("Throttle: processed {} records", count);
+                    logger.debug("nodeId={}, Throttle processed {} records", nodeId, count);
                 }
             } finally {
                 throttleState.remove();
             }
 
-            logger.info("Throttle writer produced {} items", outputItems.size());
+            logger.info("nodeId={}, Throttle writing {} items to routing context", nodeId, outputItems.size());
             context.setVariable("outputItems", outputItems);
         };
     }

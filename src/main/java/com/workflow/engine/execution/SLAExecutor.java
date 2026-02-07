@@ -58,14 +58,14 @@ public class SLAExecutor implements NodeExecutor<Map<String, Object>, Map<String
         JsonNode config = context.getNodeDefinition().getConfig();
         long maxDurationMs = config.has("maxDurationMs") ? config.get("maxDurationMs").asLong() : Long.MAX_VALUE;
         String action = config.has("action") ? config.get("action").asText() : "FAIL_JOB";
+        String nodeId = context.getNodeDefinition().getId();
 
         return items -> {
-            logger.info("SLAExecutor writing {} items", items.getItems().size());
             List<Map<String, Object>> outputItems = new ArrayList<>();
-
             for (Map<String, Object> item : items) {
-                if (item == null) continue;
-                outputItems.add(item);
+                if (item != null) {
+                    outputItems.add(item);
+                }
             }
 
             try {
@@ -77,19 +77,20 @@ public class SLAExecutor implements NodeExecutor<Map<String, Object>, Map<String
                         String message = String.format("SLA exceeded: %dms > %dms", duration, maxDurationMs);
 
                         if ("WARN".equalsIgnoreCase(action)) {
-                            logger.warn(message);
+                            logger.warn("nodeId={}, {}", nodeId, message);
                         } else if ("FAIL_JOB".equalsIgnoreCase(action)) {
-                            logger.error(message);
+                            logger.error("nodeId={}, {}", nodeId, message);
                             throw new RuntimeException("SLA violation: " + message);
                         }
                     } else {
-                        logger.debug("SLA check passed: {}ms <= {}ms", duration, maxDurationMs);
+                        logger.debug("nodeId={}, SLA check passed: {}ms <= {}ms", nodeId, duration, maxDurationMs);
                     }
                 }
             } finally {
                 startTime.remove();
             }
 
+            logger.info("nodeId={}, SLA writing {} items to routing context", nodeId, outputItems.size());
             context.setVariable("outputItems", outputItems);
         };
     }

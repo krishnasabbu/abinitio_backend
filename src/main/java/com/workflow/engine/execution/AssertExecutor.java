@@ -81,6 +81,7 @@ public class AssertExecutor implements NodeExecutor<Map<String, Object>, Map<Str
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
+        String nodeId = context.getNodeDefinition().getId();
         return items -> {
             List<Map<String, Object>> outputList = new ArrayList<>();
             for (Map<String, Object> item : items) {
@@ -88,7 +89,7 @@ public class AssertExecutor implements NodeExecutor<Map<String, Object>, Map<Str
                     outputList.add(item);
                 }
             }
-            logger.info("Assert writer passed {} items", outputList.size());
+            logger.info("nodeId={}, Assert writing {} items to routing context", nodeId, outputList.size());
             context.setVariable("outputItems", outputList);
         };
     }

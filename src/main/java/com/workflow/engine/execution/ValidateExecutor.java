@@ -2,6 +2,7 @@ package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.RoutingItemWriter;
 import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +16,7 @@ import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,6 +58,7 @@ public class ValidateExecutor implements NodeExecutor<Map<String, Object>, Map<S
         String rulesStr = config.get("rules").asText();
 
         List<ValidationRule> rules = parseRules(rulesStr);
+        boolean isRouting = context instanceof RoutingNodeExecutionContext;
 
         return item -> {
             List<String> validationErrors = new ArrayList<>();
@@ -79,11 +82,19 @@ public class ValidateExecutor implements NodeExecutor<Map<String, Object>, Map<S
             }
 
             if (validationErrors.isEmpty()) {
+                if (isRouting) {
+                    Map<String, Object> routed = new HashMap<>(item);
+                    routed.put("_routePort", "out");
+                    return routed;
+                }
                 return item;
             } else {
                 Map<String, Object> result = new LinkedHashMap<>(item);
                 result.put("_validationErrors", validationErrors);
                 result.put("_failedRules", failedRules);
+                if (isRouting) {
+                    result.put("_routePort", "invalid");
+                }
                 return result;
             }
         };
@@ -91,6 +102,17 @@ public class ValidateExecutor implements NodeExecutor<Map<String, Object>, Map<S
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
+        String nodeId = context.getNodeDefinition().getId();
+
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            RoutingItemWriter routingWriter = new RoutingItemWriter(routingCtx.getRoutingContext(), "_routePort");
+            return items -> {
+                logger.info("nodeId={}, Validate routing {} items", nodeId, items.size());
+                routingWriter.write(items);
+            };
+        }
+
         return items -> {
             List<Map<String, Object>> validOutputList = new ArrayList<>();
             List<Map<String, Object>> invalidOutputList = new ArrayList<>();
@@ -105,7 +127,7 @@ public class ValidateExecutor implements NodeExecutor<Map<String, Object>, Map<S
                 }
             }
 
-            logger.info("Validate writer produced {} valid and {} invalid items", validOutputList.size(), invalidOutputList.size());
+            logger.info("nodeId={}, Validate produced {} valid and {} invalid items", nodeId, validOutputList.size(), invalidOutputList.size());
             context.setVariable("outputItems", validOutputList);
             context.setVariable("invalidItems", invalidOutputList);
         };

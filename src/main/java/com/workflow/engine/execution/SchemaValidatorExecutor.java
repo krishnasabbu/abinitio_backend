@@ -58,9 +58,11 @@ public class SchemaValidatorExecutor implements NodeExecutor<Map<String, Object>
         JsonNode config = context.getNodeDefinition().getConfig();
         String schemaFieldsStr = config.has("schemaFields") ? config.get("schemaFields").asText() : "";
         String onMismatch = config.has("onMismatch") ? config.get("onMismatch").asText() : "FAIL";
+        String nodeId = context.getNodeDefinition().getId();
 
         Map<String, String> expectedFields = parseSchemaFields(schemaFieldsStr);
         Set<String> expectedFieldNames = expectedFields.keySet();
+        boolean isRouting = context instanceof RoutingNodeExecutionContext;
 
         return items -> {
             List<Map<String, Object>> validItems = new ArrayList<>();
@@ -96,9 +98,25 @@ public class SchemaValidatorExecutor implements NodeExecutor<Map<String, Object>
                 }
             }
 
-            logger.info("SchemaValidator writer produced {} valid and {} invalid items", validItems.size(), invalidItems.size());
-            context.setVariable("outputItems", validItems);
-            context.setVariable("invalidItems", invalidItems);
+            logger.info("nodeId={}, SchemaValidator produced {} valid and {} invalid items", nodeId, validItems.size(), invalidItems.size());
+
+            if (isRouting) {
+                List<Map<String, Object>> allRoutedItems = new ArrayList<>();
+                for (Map<String, Object> validItem : validItems) {
+                    Map<String, Object> annotated = new LinkedHashMap<>(validItem);
+                    annotated.put("_routePort", "out");
+                    allRoutedItems.add(annotated);
+                }
+                for (Map<String, Object> invalidItem : invalidItems) {
+                    Map<String, Object> annotated = new LinkedHashMap<>(invalidItem);
+                    annotated.put("_routePort", "invalid");
+                    allRoutedItems.add(annotated);
+                }
+                context.setVariable("outputItems", allRoutedItems);
+            } else {
+                context.setVariable("outputItems", validItems);
+                context.setVariable("invalidItems", invalidItems);
+            }
         };
     }
 
