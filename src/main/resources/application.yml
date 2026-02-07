@@ -56,3 +56,5 @@ workflow:
     maxExpansionDepth: 10
   restart:
     preserveState: true
+  logs:
+    directory: ./logs

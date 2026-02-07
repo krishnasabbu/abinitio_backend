@@ -29,6 +29,8 @@ public class ExecutionLogWriter {
                     "VALUES (?, ?, ?, ?, ?, ?, ?)";
 
             jdbcTemplate.update(sql, timestamp, datetime, level, executionId, nodeId, message, stackTrace);
+
+            ExecutionLogFileWriter.appendLog(executionId, timestamp, level, nodeId, message, stackTrace);
         } catch (Exception e) {
             logger.error("Error writing log for execution {}", executionId, e);
         }

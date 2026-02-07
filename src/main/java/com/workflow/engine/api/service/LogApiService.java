@@ -1,10 +1,17 @@
 package com.workflow.engine.api.service;
 
 import com.workflow.engine.api.dto.LogEntryDto;
+import com.workflow.engine.api.persistence.ExecutionLogFileWriter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Value;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -14,16 +21,42 @@ public class LogApiService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Value("${workflow.logs.directory:./logs}")
+    private String logDirectory;
+
+    @PostConstruct
+    public void init() {
+        ExecutionLogFileWriter.setLogDirectory(logDirectory);
+    }
+
     public Map<String, Object> listExecutionLogs() {
         String sql = "SELECT execution_id, COUNT(*) as log_count, MIN(timestamp) as first_timestamp, MAX(timestamp) as last_timestamp "
                 + "FROM execution_logs GROUP BY execution_id ORDER BY MAX(timestamp) DESC";
 
         List<Map<String, Object>> logs = jdbcTemplate.query(sql, (rs, rowNum) -> {
+            String execId = rs.getString("execution_id");
             Map<String, Object> logEntry = new LinkedHashMap<>();
-            logEntry.put("execution_id", rs.getString("execution_id"));
+            logEntry.put("execution_id", execId);
             logEntry.put("log_count", rs.getInt("log_count"));
             logEntry.put("first_timestamp", rs.getLong("first_timestamp"));
             logEntry.put("last_timestamp", rs.getLong("last_timestamp"));
+
+            Path logFile = ExecutionLogFileWriter.getLogFilePath(execId);
+            if (Files.exists(logFile)) {
+                logEntry.put("file_path", logFile.toString());
+                try {
+                    logEntry.put("file_size_bytes", Files.size(logFile));
+                    logEntry.put("file_available", true);
+                } catch (IOException e) {
+                    logEntry.put("file_size_bytes", 0);
+                    logEntry.put("file_available", false);
+                }
+            } else {
+                logEntry.put("file_path", logFile.toString());
+                logEntry.put("file_size_bytes", 0);
+                logEntry.put("file_available", false);
+            }
+
             return logEntry;
         });
 
@@ -238,6 +271,48 @@ public class LogApiService {
                 "error_count", levels.getOrDefault("ERROR", 0),
                 "warning_count", levels.getOrDefault("WARN", 0)
         );
+    }
+
+    public Map<String, Object> getLogFileContent(String executionId, Integer tail) {
+        Path logFile = ExecutionLogFileWriter.getLogFilePath(executionId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("execution_id", executionId);
+        result.put("file_path", logFile.toString());
+
+        if (!Files.exists(logFile)) {
+            result.put("exists", false);
+            result.put("content", "");
+            return result;
+        }
+
+        try {
+            result.put("exists", true);
+            result.put("file_size_bytes", Files.size(logFile));
+
+            List<String> allLines = Files.readAllLines(logFile);
+            List<String> lines;
+            if (tail != null && tail > 0 && tail < allLines.size()) {
+                lines = allLines.subList(allLines.size() - tail, allLines.size());
+            } else {
+                lines = allLines;
+            }
+            result.put("content", String.join(System.lineSeparator(), lines));
+            result.put("total_lines", allLines.size());
+            result.put("returned_lines", lines.size());
+        } catch (IOException e) {
+            result.put("exists", true);
+            result.put("content", "Error reading log file: " + e.getMessage());
+        }
+
+        return result;
+    }
+
+    public Path getLogFilePathForDownload(String executionId) {
+        Path logFile = ExecutionLogFileWriter.getLogFilePath(executionId);
+        if (Files.exists(logFile)) {
+            return logFile;
+        }
+        return null;
     }
 
     private Map<String, Integer> getLevelCounts(String executionId) {

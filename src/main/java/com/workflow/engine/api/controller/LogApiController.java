@@ -7,9 +7,14 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.file.Path;
 import java.util.Map;
 
 @RestController
@@ -141,5 +146,44 @@ public class LogApiController {
             @PathVariable String executionId) {
         Map<String, Object> analysis = logApiService.getLogAnalysis(executionId);
         return ResponseEntity.ok(analysis);
+    }
+
+    @GetMapping(value = "/logs/file/{executionId}", produces = "application/json")
+    @Operation(summary = "Get log file content", description = "Retrieve the content of the log file for a specific execution")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Log file content retrieved successfully"),
+        @ApiResponse(responseCode = "404", description = "Log file not found")
+    })
+    public ResponseEntity<Map<String, Object>> getLogFileContent(
+            @Parameter(description = "The execution ID", required = true)
+            @PathVariable String executionId,
+            @Parameter(description = "Number of lines from the end to return (tail)")
+            @RequestParam(required = false) Integer tail) {
+        Map<String, Object> content = logApiService.getLogFileContent(executionId, tail);
+        boolean exists = (boolean) content.getOrDefault("exists", false);
+        if (!exists) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(content);
+    }
+
+    @GetMapping(value = "/logs/file/{executionId}/download", produces = "text/plain")
+    @Operation(summary = "Download log file", description = "Download the raw log file for a specific execution")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Log file download started"),
+        @ApiResponse(responseCode = "404", description = "Log file not found")
+    })
+    public ResponseEntity<Resource> downloadLogFile(
+            @Parameter(description = "The execution ID", required = true)
+            @PathVariable String executionId) {
+        Path logFile = logApiService.getLogFilePathForDownload(executionId);
+        if (logFile == null) {
+            return ResponseEntity.notFound().build();
+        }
+        Resource resource = new FileSystemResource(logFile);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + executionId + ".log\"")
+                .contentType(MediaType.TEXT_PLAIN)
+                .body(resource);
     }
 }

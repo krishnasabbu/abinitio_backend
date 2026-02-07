@@ -31,6 +31,8 @@ public class ExecutionLogAppender extends AppenderBase<ILoggingEvent> {
                     "VALUES (?, ?, ?, ?, ?, ?)";
 
             jdbcTemplate.update(sql, timestamp, level, executionId, nodeId, message, stackTrace);
+
+            ExecutionLogFileWriter.appendLog(executionId, timestamp, level, nodeId, message, stackTrace);
         } catch (Exception e) {
             addError("Error writing log for execution " + executionId, e);
         }
