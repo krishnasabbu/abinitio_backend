@@ -2,6 +2,8 @@ package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
@@ -10,6 +12,8 @@ import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.util.*;
@@ -17,6 +21,7 @@ import java.util.*;
 @Component
 public class ReformatExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
+    private static final Logger logger = LoggerFactory.getLogger(ReformatExecutor.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static final ExpressionParser parser = new SpelExpressionParser();
 
@@ -27,6 +32,15 @@ public class ReformatExecutor implements NodeExecutor<Map<String, Object>, Map<S
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            String executionId = routingCtx.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+
+            logger.debug("Using BufferedItemReader for Reformat node {} port 'in'", nodeId);
+            return new BufferedItemReader(executionId, nodeId, "in", routingCtx.getRoutingContext().getBufferStore());
+        }
+
         List<Map<String, Object>> items = (List<Map<String, Object>>) context.getVariable("inputItems");
         if (items == null) {
             items = new ArrayList<>();
