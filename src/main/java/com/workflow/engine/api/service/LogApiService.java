@@ -15,21 +15,17 @@ public class LogApiService {
     private JdbcTemplate jdbcTemplate;
 
     public Map<String, Object> listExecutionLogs() {
-        String sql = "SELECT DISTINCT execution_id, COUNT(*) as count FROM execution_logs GROUP BY execution_id";
-        List<Map<String, Object>> logs = new ArrayList<>();
+        String sql = "SELECT execution_id, COUNT(*) as log_count, MIN(timestamp) as first_timestamp, MAX(timestamp) as last_timestamp "
+                + "FROM execution_logs GROUP BY execution_id ORDER BY MAX(timestamp) DESC";
 
-        String querySql = "SELECT execution_id FROM execution_logs GROUP BY execution_id";
-        List<String> executionIds = jdbcTemplate.queryForList(querySql, String.class);
-
-        for (String execId : executionIds) {
-            Map<String, Object> logEntry = new HashMap<>();
-            logEntry.put("execution_id", execId);
-            logEntry.put("file_path", "/logs/" + execId + ".log");
-            logEntry.put("file_size_bytes", 1024000);
-            logEntry.put("created_at", System.currentTimeMillis());
-            logEntry.put("modified_at", System.currentTimeMillis());
-            logs.add(logEntry);
-        }
+        List<Map<String, Object>> logs = jdbcTemplate.query(sql, (rs, rowNum) -> {
+            Map<String, Object> logEntry = new LinkedHashMap<>();
+            logEntry.put("execution_id", rs.getString("execution_id"));
+            logEntry.put("log_count", rs.getInt("log_count"));
+            logEntry.put("first_timestamp", rs.getLong("first_timestamp"));
+            logEntry.put("last_timestamp", rs.getLong("last_timestamp"));
+            return logEntry;
+        });
 
         return Map.of("logs", logs, "total", logs.size());
     }
