@@ -27,6 +27,7 @@ public class PersistenceStepListener implements StepExecutionListener {
     private final String executionId;
     private final OutputCollectingWriter<?> collectingWriter;
     private final NodeOutputDataRepository outputDataRepository;
+    private final ExecutionLogWriter logWriter;
 
     public PersistenceStepListener(JdbcTemplate jdbcTemplate, StepNode stepNode, String executionId) {
         this(jdbcTemplate, stepNode, executionId, null, null);
@@ -39,6 +40,7 @@ public class PersistenceStepListener implements StepExecutionListener {
         this.executionId = executionId;
         this.collectingWriter = collectingWriter;
         this.outputDataRepository = outputDataRepository;
+        this.logWriter = new ExecutionLogWriter(jdbcTemplate, executionId);
     }
 
     @Override
@@ -59,6 +61,8 @@ public class PersistenceStepListener implements StepExecutionListener {
 
             stepExecution.getExecutionContext().put("nodeExecutionId", recordId);
             stepExecution.getExecutionContext().put("nodeId", nodeId);
+
+            logWriter.writeLog("INFO", "Node '" + nodeId + "' (" + nodeType + ") execution started", nodeId);
 
             logger.info("Node execution started: node='{}', type='{}', executionId='{}', recordId='{}', rows={}",
                 nodeId, nodeType, executionId, recordId, rowsInserted);
@@ -113,6 +117,14 @@ public class PersistenceStepListener implements StepExecutionListener {
 
             logger.info("Node execution completed: node='{}', status='{}', input={}, output={}, time={}ms, rowsUpdated={}",
                 stepNode.nodeId(), status, inputRecords, outputRecords, executionTimeMs, rowsUpdated);
+
+            if (errorMessage != null) {
+                logWriter.writeLog("ERROR", "Node '" + stepNode.nodeId() + "' failed: " + errorMessage, stepNode.nodeId());
+            } else {
+                logWriter.writeLog("INFO",
+                    "Node '" + stepNode.nodeId() + "' completed successfully (input=" + inputRecords + ", output=" + outputRecords + ", time=" + executionTimeMs + "ms)",
+                    stepNode.nodeId());
+            }
 
             persistOutputData(stepNode.nodeId(), stepNode.nodeType());
 

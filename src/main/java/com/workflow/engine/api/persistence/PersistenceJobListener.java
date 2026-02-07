@@ -14,15 +14,18 @@ public class PersistenceJobListener implements JobExecutionListener {
 
     private final JdbcTemplate jdbcTemplate;
     private final String executionId;
+    private final ExecutionLogWriter logWriter;
 
     public PersistenceJobListener(JdbcTemplate jdbcTemplate, String executionId) {
         this.jdbcTemplate = jdbcTemplate;
         this.executionId = executionId;
+        this.logWriter = new ExecutionLogWriter(jdbcTemplate, executionId);
     }
 
     @Override
     public void beforeJob(JobExecution jobExecution) {
         logger.info("PersistenceJobListener.beforeJob() called for executionId: {}", executionId);
+        logWriter.writeLog("INFO", "Workflow execution started");
     }
 
     @Override
@@ -64,6 +67,12 @@ public class PersistenceJobListener implements JobExecutionListener {
                 executionId, finalStatus, endTime, rowsUpdated);
 
             calculateAndUpdateTotals(jobExecution);
+
+            if (errorMessage != null) {
+                logWriter.writeLog("ERROR", "Workflow execution failed: " + errorMessage);
+            } else {
+                logWriter.writeLog("INFO", "Workflow execution completed with status: " + finalStatus);
+            }
 
             logger.info("Job completed for execution: {}, status: {}", executionId, finalStatus);
         } catch (Exception e) {
