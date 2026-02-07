@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Executor for reading data from local filesystem files.
@@ -98,11 +99,16 @@ public class FileSourceExecutor implements NodeExecutor<Map<String, Object>, Map
         DefaultLineMapper<Map<String, Object>> lineMapper = new DefaultLineMapper<>();
         lineMapper.setLineTokenizer(tokenizer);
 
+        String splitPattern = Pattern.quote(delimiter);
         if (!schema.isEmpty()) {
             tokenizer.setNames(schema.getFieldNames().toArray(new String[0]));
         } else if (hasHeader) {
             reader.setSkippedLinesCallback(line -> {
-                String[] headerTokens = line.split(delimiter, -1);
+                String[] headerTokens = line.split(splitPattern, -1);
+                for (int i = 0; i < headerTokens.length; i++) {
+                    headerTokens[i] = headerTokens[i].trim();
+                }
+                logger.debug("Parsed header tokens from csv: {}", (Object) headerTokens);
                 tokenizer.setNames(headerTokens);
             });
         }
@@ -198,11 +204,16 @@ public class FileSourceExecutor implements NodeExecutor<Map<String, Object>, Map
         DefaultLineMapper<Map<String, Object>> lineMapper = new DefaultLineMapper<>();
         lineMapper.setLineTokenizer(tokenizer);
 
+        String splitPattern = Pattern.quote(delimiter);
         if (!schema.isEmpty()) {
             tokenizer.setNames(schema.getFieldNames().toArray(new String[0]));
         } else if (hasHeader) {
             reader.setSkippedLinesCallback(line -> {
-                String[] headerTokens = line.split(delimiter, -1);
+                String[] headerTokens = line.split(splitPattern, -1);
+                for (int i = 0; i < headerTokens.length; i++) {
+                    headerTokens[i] = headerTokens[i].trim();
+                }
+                logger.debug("Parsed header tokens from txt: {}", (Object) headerTokens);
                 tokenizer.setNames(headerTokens);
             });
         }
