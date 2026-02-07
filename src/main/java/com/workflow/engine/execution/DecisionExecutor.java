@@ -7,11 +7,12 @@ import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.expression.spel.support.StandardEvaluationContext;
+import org.springframework.expression.spel.support.SimpleEvaluationContext;
 import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.RoutingItemWriter;
 import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 
 import java.util.ArrayList;
@@ -19,15 +20,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Executor for conditional decision nodes.
- *
- * Evaluates a condition expression and adds a decision field to each item.
- * Used to create conditional branching paths in workflows.
- *
- * @author Workflow Engine
- * @version 1.0
- */
 @Component
 public class DecisionExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
@@ -57,26 +49,51 @@ public class DecisionExecutor implements NodeExecutor<Map<String, Object>, Map<S
 
     @Override
     public ItemProcessor<Map<String, Object>, Map<String, Object>> createProcessor(NodeExecutionContext context) {
-        return item -> item;
+        JsonNode config = context.getNodeDefinition().getConfig();
+        String condition = config != null && config.has("condition") ? config.get("condition").asText() : null;
+        String nodeId = context.getNodeDefinition().getId();
+
+        return item -> {
+            Map<String, Object> routedItem = new LinkedHashMap<>(item);
+            String port = "true";
+
+            if (condition != null && !condition.trim().isEmpty()) {
+                try {
+                    SimpleEvaluationContext evalCtx = SimpleEvaluationContext.forReadOnlyDataBinding().build();
+                    Object result = parser.parseExpression(condition).getValue(evalCtx, item);
+                    boolean passed = result instanceof Boolean && (Boolean) result;
+                    port = passed ? "true" : "false";
+                    logger.debug("nodeId={}, Decision condition '{}' evaluated to {}", nodeId, condition, passed);
+                } catch (Exception e) {
+                    logger.warn("nodeId={}, Decision condition evaluation failed: {}", nodeId, e.getMessage());
+                    port = "false";
+                }
+            }
+
+            routedItem.put("_routePort", port);
+            return routedItem;
+        };
     }
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
-        String description = context.getNodeDefinition().getConfig().has("description")
-            ? context.getNodeDefinition().getConfig().get("description").asText()
-            : "";
-
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            RoutingItemWriter routingWriter = new RoutingItemWriter(routingCtx.getRoutingContext(), "_routePort");
+            return items -> {
+                logger.info("nodeId={}, Decision routing {} items", context.getNodeDefinition().getId(), items.size());
+                routingWriter.write(items);
+            };
+        }
         return items -> {
-            List<Map<String, Object>> outputItems = new ArrayList<>();
+            List<Map<String, Object>> outputList = new ArrayList<>();
             for (Map<String, Object> item : items) {
                 if (item != null) {
-                    Map<String, Object> routedItem = new LinkedHashMap<>(item);
-                    routedItem.put("_route", "default");
-                    outputItems.add(routedItem);
+                    outputList.add(item);
                 }
             }
-            logger.info("DecisionExecutor writing {} items", outputItems.size());
-            context.setVariable("outputItems", outputItems);
+            logger.info("nodeId={}, Decision writing {} items", context.getNodeDefinition().getId(), outputList.size());
+            context.setVariable("outputItems", outputList);
         };
     }
 

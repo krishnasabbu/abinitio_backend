@@ -1,27 +1,25 @@
 package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.expression.spel.support.StandardEvaluationContext;
+import org.springframework.expression.spel.support.SimpleEvaluationContext;
 import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.RoutingItemWriter;
 import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Executor for job-level condition nodes that evaluate SpEL expressions to control workflow branching.
- */
 @Component
 public class JobConditionExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
@@ -56,19 +54,31 @@ public class JobConditionExecutor implements NodeExecutor<Map<String, Object>, M
             throw new IllegalArgumentException("nodeType=JobCondition, nodeId=" + nodeId + ", missing expression");
         }
 
+        boolean isRouting = context instanceof RoutingNodeExecutionContext;
+
         return item -> {
             String flagKey = "jobCondition_" + nodeId;
-            if (context.getVariable(flagKey) == null) {
+            boolean conditionResult;
+
+            if (context.getVariable(flagKey) != null) {
+                conditionResult = (Boolean) context.getVariable(flagKey);
+            } else {
                 try {
-                    StandardEvaluationContext evalCtx = new StandardEvaluationContext(context.getVariables());
-                    Object result = parser.parseExpression(expression).getValue(evalCtx);
-                    boolean conditionResult = result instanceof Boolean && (Boolean) result;
+                    SimpleEvaluationContext evalCtx = SimpleEvaluationContext.forReadOnlyDataBinding().build();
+                    Object result = parser.parseExpression(expression).getValue(evalCtx, context.getVariables());
+                    conditionResult = result instanceof Boolean && (Boolean) result;
                     context.setVariable(flagKey, conditionResult);
-                    logger.debug("JobCondition node {} evaluated to {}", nodeId, conditionResult);
+                    logger.debug("nodeId={}, JobCondition evaluated to {}", nodeId, conditionResult);
                 } catch (Exception e) {
-                    logger.error("JobCondition evaluation failed: {}", e.getMessage());
+                    logger.error("nodeId={}, JobCondition evaluation failed: {}", nodeId, e.getMessage());
                     throw new RuntimeException("nodeType=JobCondition, nodeId=" + nodeId + ", evaluation failed: " + e.getMessage());
                 }
+            }
+
+            if (isRouting) {
+                Map<String, Object> routedItem = new LinkedHashMap<>(item);
+                routedItem.put("_routePort", conditionResult ? "true" : "false");
+                return routedItem;
             }
             return item;
         };
@@ -76,9 +86,23 @@ public class JobConditionExecutor implements NodeExecutor<Map<String, Object>, M
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            RoutingItemWriter routingWriter = new RoutingItemWriter(routingCtx.getRoutingContext(), "_routePort");
+            return items -> {
+                logger.info("nodeId={}, JobCondition routing {} items", context.getNodeDefinition().getId(), items.size());
+                routingWriter.write(items);
+            };
+        }
         return items -> {
-            logger.info("JobConditionExecutor writing {} items", items.getItems().size());
-            context.setVariable("outputItems", new ArrayList<>(items.getItems()));
+            List<Map<String, Object>> outputList = new ArrayList<>();
+            for (Map<String, Object> item : items) {
+                if (item != null) {
+                    outputList.add(item);
+                }
+            }
+            logger.info("nodeId={}, JobCondition writing {} items", context.getNodeDefinition().getId(), outputList.size());
+            context.setVariable("outputItems", outputList);
         };
     }
 

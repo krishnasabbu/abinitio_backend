@@ -7,11 +7,12 @@ import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.expression.spel.support.StandardEvaluationContext;
+import org.springframework.expression.spel.support.SimpleEvaluationContext;
 import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.RoutingItemWriter;
 import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 
 import java.util.ArrayList;
@@ -19,9 +20,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Executor for switch nodes that route items to different outputs based on SpEL condition rules.
- */
 @Component
 public class SwitchExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
@@ -51,45 +49,56 @@ public class SwitchExecutor implements NodeExecutor<Map<String, Object>, Map<Str
 
     @Override
     public ItemProcessor<Map<String, Object>, Map<String, Object>> createProcessor(NodeExecutionContext context) {
-        return item -> item;
+        JsonNode config = context.getNodeDefinition().getConfig();
+        String rulesStr = config.has("rules") ? config.get("rules").asText() : "";
+        String nodeId = context.getNodeDefinition().getId();
+
+        Map<String, String> rules = parseKeyValue(rulesStr);
+
+        return item -> {
+            String route = "default";
+            for (Map.Entry<String, String> rule : rules.entrySet()) {
+                String condition = rule.getKey();
+                String output = rule.getValue();
+
+                try {
+                    SimpleEvaluationContext evalCtx = SimpleEvaluationContext.forReadOnlyDataBinding().build();
+                    Object result = parser.parseExpression(condition).getValue(evalCtx, item);
+                    if (result instanceof Boolean && (Boolean) result) {
+                        route = output;
+                        break;
+                    }
+                } catch (Exception e) {
+                    logger.warn("nodeId={}, Switch rule '{}' evaluation failed: {}", nodeId, condition, e.getMessage());
+                }
+            }
+
+            Map<String, Object> routedItem = new LinkedHashMap<>(item);
+            routedItem.put("_routePort", route);
+            logger.debug("nodeId={}, Switch routed item to port '{}'", nodeId, route);
+            return routedItem;
+        };
     }
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
-        JsonNode config = context.getNodeDefinition().getConfig();
-        String rulesStr = config.has("rules") ? config.get("rules").asText() : "";
-
-        Map<String, String> rules = parseKeyValue(rulesStr);
-
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            RoutingItemWriter routingWriter = new RoutingItemWriter(routingCtx.getRoutingContext(), "_routePort");
+            return items -> {
+                logger.info("nodeId={}, Switch routing {} items", context.getNodeDefinition().getId(), items.size());
+                routingWriter.write(items);
+            };
+        }
         return items -> {
-            List<Map<String, Object>> outputItems = new ArrayList<>();
-
+            List<Map<String, Object>> outputList = new ArrayList<>();
             for (Map<String, Object> item : items) {
-                if (item == null) continue;
-
-                String route = "default";
-                for (Map.Entry<String, String> rule : rules.entrySet()) {
-                    String condition = rule.getKey();
-                    String output = rule.getValue();
-
-                    try {
-                        StandardEvaluationContext evalContext = new StandardEvaluationContext(item);
-                        Object result = parser.parseExpression(condition).getValue(evalContext);
-                        if (result instanceof Boolean && (Boolean) result) {
-                            route = output;
-                            break;
-                        }
-                    } catch (Exception e) {
-                    }
+                if (item != null) {
+                    outputList.add(item);
                 }
-
-                Map<String, Object> routedItem = new LinkedHashMap<>(item);
-                routedItem.put("_route", route);
-                outputItems.add(routedItem);
             }
-
-            logger.info("SwitchExecutor writing {} items", outputItems.size());
-            context.setVariable("outputItems", outputItems);
+            logger.info("nodeId={}, Switch writing {} items", context.getNodeDefinition().getId(), outputList.size());
+            context.setVariable("outputItems", outputList);
         };
     }
 
