@@ -127,7 +127,7 @@ public class JoinExecutor implements NodeExecutor<Map<String, Object>, Map<Strin
             }
 
             logger.info("Join produced {} output items (joinType={}, leftItems={}, rightItems={})",
-                outputItems.size(), joinType, ((List<?>) items).size(), rightItems.size());
+                outputItems.size(), joinType, items.size(), rightItems.size());
             context.setVariable("outputItems", outputItems);
         };
     }

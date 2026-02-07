@@ -372,16 +372,97 @@ public class DynamicJobBuilder {
             return buildFlowFromNode(entryStepIds.get(0), ctx, FlowMode.NORMAL);
         }
 
-        List<Flow> entryFlows = entryStepIds.stream()
-            .map(id -> buildFlowFromNode(id, ctx, FlowMode.NORMAL))
-            .filter(Objects::nonNull)
-            .collect(Collectors.toList());
+        List<String> topoOrder = computeTopologicalOrder(ctx.plan);
+        Set<String> entrySet = new HashSet<>(entryStepIds);
+
+        List<Flow> entryFlows = new ArrayList<>();
+        for (String entryId : entryStepIds) {
+            Step step = ctx.stepMap.get(entryId);
+            StepNode node = ctx.plan.steps().get(entryId);
+            FlowBuilder<SimpleFlow> fb = new FlowBuilder<>(entryId + "-entry");
+            fb.start(step);
+            wireErrorRouting(fb, node, ctx);
+            fb.on("*").end();
+            entryFlows.add(fb.build());
+        }
 
         if (entryFlows.isEmpty()) {
             throw new IllegalStateException("No valid entry flows could be built");
         }
 
-        return createParallelSplit(entryFlows, "main-split");
+        Flow splitFlow = createParallelSplit(entryFlows, "main-split");
+
+        List<String> remaining = topoOrder.stream()
+            .filter(id -> !entrySet.contains(id))
+            .collect(Collectors.toList());
+
+        if (remaining.isEmpty()) {
+            return splitFlow;
+        }
+
+        FlowBuilder<SimpleFlow> mainFlowBuilder = new FlowBuilder<>("main-flow");
+        mainFlowBuilder.start(splitFlow);
+
+        for (String nodeId : remaining) {
+            Step step = ctx.stepMap.get(nodeId);
+            StepNode node = ctx.plan.steps().get(nodeId);
+            FlowBuilder<SimpleFlow> nodeFlowBuilder = new FlowBuilder<>(nodeId + "-seq");
+            nodeFlowBuilder.start(step);
+            wireErrorRouting(nodeFlowBuilder, node, ctx);
+            nodeFlowBuilder.on("*").end();
+            mainFlowBuilder.next(nodeFlowBuilder.build());
+        }
+
+        logger.info("[GRAPH] DAG-aware main flow: split {} entry points, then {} sequential steps: {}",
+            entryStepIds.size(), remaining.size(), remaining);
+
+        return mainFlowBuilder.build();
+    }
+
+    private List<String> computeTopologicalOrder(ExecutionPlan plan) {
+        Map<String, Set<String>> incomingEdges = new HashMap<>();
+        for (String nodeId : plan.steps().keySet()) {
+            incomingEdges.put(nodeId, new HashSet<>());
+        }
+        for (Map.Entry<String, StepNode> entry : plan.steps().entrySet()) {
+            StepNode node = entry.getValue();
+            if (node.nextSteps() != null) {
+                for (String toId : node.nextSteps()) {
+                    if (incomingEdges.containsKey(toId)) {
+                        incomingEdges.get(toId).add(entry.getKey());
+                    }
+                }
+            }
+        }
+
+        List<String> result = new ArrayList<>();
+        Queue<String> queue = new LinkedList<>();
+
+        for (Map.Entry<String, Set<String>> entry : incomingEdges.entrySet()) {
+            if (entry.getValue().isEmpty()) {
+                queue.add(entry.getKey());
+            }
+        }
+
+        while (!queue.isEmpty()) {
+            String nodeId = queue.poll();
+            result.add(nodeId);
+
+            StepNode node = plan.steps().get(nodeId);
+            if (node != null && node.nextSteps() != null) {
+                for (String nextId : node.nextSteps()) {
+                    Set<String> incoming = incomingEdges.get(nextId);
+                    if (incoming != null) {
+                        incoming.remove(nodeId);
+                        if (incoming.isEmpty()) {
+                            queue.add(nextId);
+                        }
+                    }
+                }
+            }
+        }
+
+        return result;
     }
 
     private Flow buildFlowFromNode(String nodeId, BuildContext ctx, FlowMode mode) {
