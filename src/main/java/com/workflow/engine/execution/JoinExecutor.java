@@ -1,11 +1,16 @@
 package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.EdgeBufferStore;
+import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -15,6 +20,8 @@ import java.util.Map;
 @Component
 public class JoinExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
+    private static final Logger logger = LoggerFactory.getLogger(JoinExecutor.class);
+
     @Override
     public String getNodeType() {
         return "Join";
@@ -22,6 +29,16 @@ public class JoinExecutor implements NodeExecutor<Map<String, Object>, Map<Strin
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            String executionId = routingCtx.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+            EdgeBufferStore bufferStore = routingCtx.getRoutingContext().getBufferStore();
+
+            logger.debug("Using BufferedItemReader for Join node {} port 'left'", nodeId);
+            return new BufferedItemReader(executionId, nodeId, "left", bufferStore);
+        }
+
         List<Map<String, Object>> leftItems = (List<Map<String, Object>>) context.getVariable("leftInputItems");
         if (leftItems == null) {
             leftItems = new ArrayList<>();
@@ -44,9 +61,20 @@ public class JoinExecutor implements NodeExecutor<Map<String, Object>, Map<Strin
         List<String> leftKeys = parseArray(leftKeysStr);
         List<String> rightKeys = parseArray(rightKeysStr);
 
-        List<Map<String, Object>> rightItems = (List<Map<String, Object>>) context.getVariable("rightInputItems");
-        if (rightItems == null) {
-            rightItems = new ArrayList<>();
+        List<Map<String, Object>> rightItems;
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            String executionId = routingCtx.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+            EdgeBufferStore bufferStore = routingCtx.getRoutingContext().getBufferStore();
+
+            rightItems = bufferStore.getRecords(executionId, nodeId, "right");
+            logger.debug("Join node {} read {} right items from EdgeBufferStore port 'right'", nodeId, rightItems.size());
+        } else {
+            rightItems = (List<Map<String, Object>>) context.getVariable("rightInputItems");
+            if (rightItems == null) {
+                rightItems = new ArrayList<>();
+            }
         }
 
         Map<String, Map<String, Object>> rightIndex = buildIndex(rightItems, rightKeys);

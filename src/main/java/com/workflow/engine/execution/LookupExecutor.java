@@ -1,11 +1,16 @@
 package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.EdgeBufferStore;
+import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -15,6 +20,8 @@ import java.util.Map;
 @Component
 public class LookupExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
+    private static final Logger logger = LoggerFactory.getLogger(LookupExecutor.class);
+
     @Override
     public String getNodeType() {
         return "Lookup";
@@ -22,6 +29,16 @@ public class LookupExecutor implements NodeExecutor<Map<String, Object>, Map<Str
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            String executionId = routingCtx.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+            EdgeBufferStore bufferStore = routingCtx.getRoutingContext().getBufferStore();
+
+            logger.debug("Using BufferedItemReader for Lookup node {} port 'main'", nodeId);
+            return new BufferedItemReader(executionId, nodeId, "main", bufferStore);
+        }
+
         List<Map<String, Object>> mainItems = (List<Map<String, Object>>) context.getVariable("mainInputItems");
         if (mainItems == null) {
             mainItems = new ArrayList<>();
@@ -42,9 +59,20 @@ public class LookupExecutor implements NodeExecutor<Map<String, Object>, Map<Str
 
         List<String> joinKeys = parseArray(joinKeysStr);
 
-        List<Map<String, Object>> tempLookupItems = (List<Map<String, Object>>) context.getVariable("lookupInputItems");
-        if (tempLookupItems == null) {
-            tempLookupItems = new ArrayList<>();
+        List<Map<String, Object>> tempLookupItems;
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            String executionId = routingCtx.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+            EdgeBufferStore bufferStore = routingCtx.getRoutingContext().getBufferStore();
+
+            tempLookupItems = bufferStore.getRecords(executionId, nodeId, "lookup");
+            logger.debug("Lookup node {} read {} lookup items from EdgeBufferStore port 'lookup'", nodeId, tempLookupItems.size());
+        } else {
+            tempLookupItems = (List<Map<String, Object>>) context.getVariable("lookupInputItems");
+            if (tempLookupItems == null) {
+                tempLookupItems = new ArrayList<>();
+            }
         }
         final List<Map<String, Object>> lookupItems = tempLookupItems;
 
