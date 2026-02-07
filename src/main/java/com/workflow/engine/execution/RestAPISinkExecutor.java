@@ -97,7 +97,9 @@ public class RestAPISinkExecutor implements NodeExecutor<Map<String, Object>, Ma
         return chunk -> {
             List<Map<String, Object>> items = new ArrayList<>();
             for (Map<String, Object> item : chunk) {
-                items.add(item);
+                if (item != null) {
+                    items.add(item);
+                }
             }
             logger.info("nodeId={}, Writing {} items to REST API", nodeId, items.size());
 
@@ -107,6 +109,7 @@ public class RestAPISinkExecutor implements NodeExecutor<Map<String, Object>, Ma
                 writeSingleItems(items, url, config, method, nodeId, onFailure);
             }
 
+            logger.info("nodeId={}, RestAPISink forwarding {} items to routing context", nodeId, items.size());
             context.setVariable("outputItems", items);
         };
     }

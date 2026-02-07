@@ -111,8 +111,11 @@ public class KafkaSinkExecutor implements NodeExecutor<Map<String, Object>, Map<
 
             List<Map<String, Object>> outputItems = new ArrayList<>();
             for (Map<String, Object> item : chunk) {
-                outputItems.add(item);
+                if (item != null) {
+                    outputItems.add(item);
+                }
             }
+            logger.info("nodeId={}, KafkaSink forwarding {} items to routing context", nodeId, outputItems.size());
             context.setVariable("outputItems", outputItems);
         };
     }
