@@ -13,6 +13,7 @@ import com.workflow.engine.metrics.MetricsCollectionListener;
 import com.workflow.engine.metrics.MetricsCollector;
 import com.workflow.engine.model.FailureAction;
 import com.workflow.engine.model.NodeDefinition;
+import com.workflow.engine.repository.NodeOutputDataRepository;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
@@ -37,17 +38,20 @@ public class StepFactory {
     private final JobRepository jobRepository;
     private final PlatformTransactionManager transactionManager;
     private final MetricsCollector metricsCollector;
+    private final NodeOutputDataRepository outputDataRepository;
     private JdbcTemplate jdbcTemplate;
     private String executionId;
 
     public StepFactory(NodeExecutorRegistry executorRegistry,
                       JobRepository jobRepository,
                       PlatformTransactionManager transactionManager,
-                      MetricsCollector metricsCollector) {
+                      MetricsCollector metricsCollector,
+                      NodeOutputDataRepository outputDataRepository) {
         this.executorRegistry = executorRegistry;
         this.jobRepository = jobRepository;
         this.transactionManager = transactionManager;
         this.metricsCollector = metricsCollector;
+        this.outputDataRepository = outputDataRepository;
     }
 
     public void setApiListenerContext(JdbcTemplate jdbcTemplate, String executionId) {
@@ -130,7 +134,9 @@ public class StepFactory {
             PersistenceStepListener persistenceListener = new PersistenceStepListener(
                 this.jdbcTemplate,
                 stepNode,
-                executionId
+                executionId,
+                context,
+                outputDataRepository
             );
             chunkBuilder.listener(persistenceListener);
             logger.info("Added PersistenceStepListener for node '{}' with executionId '{}'", stepNode.nodeId(), executionId);

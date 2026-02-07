@@ -6,8 +6,10 @@ import com.workflow.engine.api.dto.NodeExecutionDto;
 import com.workflow.engine.api.persistence.ExecutionLogWriter;
 import com.workflow.engine.api.persistence.PersistenceJobListener;
 import com.workflow.engine.api.persistence.PersistenceStepListener;
+import com.workflow.engine.api.util.DelimitedDataTransformer;
 import com.workflow.engine.api.util.PayloadNormalizer;
 import com.workflow.engine.api.util.TimestampConverter;
+import com.workflow.engine.repository.NodeOutputDataRepository;
 import com.workflow.engine.execution.job.DynamicJobBuilder;
 import com.workflow.engine.execution.job.StepFactory;
 import com.workflow.engine.graph.ExecutionGraphBuilder;
@@ -59,6 +61,9 @@ public class ExecutionApiService {
 
     @Autowired
     private PartialRestartManager partialRestartManager;
+
+    @Autowired
+    private NodeOutputDataRepository nodeOutputDataRepository;
 
     private ObjectMapper objectMapper = new ObjectMapper();
 
@@ -676,5 +681,49 @@ public class ExecutionApiService {
         }
 
         return dto;
+    }
+
+    public Map<String, Object> getNodeOutputData(String executionId, String nodeId, int page, int size) {
+        long totalRecords = nodeOutputDataRepository.countByNode(executionId, nodeId);
+        int offset = page * size;
+        List<Map<String, Object>> records = nodeOutputDataRepository.findByNode(executionId, nodeId, offset, size);
+
+        List<String> columns = List.of();
+        if (!records.isEmpty()) {
+            columns = new ArrayList<>(records.get(0).keySet());
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("execution_id", executionId);
+        result.put("node_id", nodeId);
+        result.put("total_records", totalRecords);
+        result.put("page", page);
+        result.put("size", size);
+        result.put("total_pages", totalRecords > 0 ? (int) Math.ceil((double) totalRecords / size) : 0);
+        result.put("columns", columns);
+        result.put("data", records);
+        return result;
+    }
+
+    public Map<String, Object> transformAndStoreDelimitedData(String executionId, String nodeId,
+                                                               String rawData, String separator, String headers) {
+        List<Map<String, Object>> records = DelimitedDataTransformer.transform(rawData, separator, headers);
+
+        nodeOutputDataRepository.saveAll(executionId, nodeId, records);
+
+        try {
+            Map<String, Object> summary = DelimitedDataTransformer.buildOutputSummary(nodeId, "Transform", records);
+            String summaryJson = objectMapper.writeValueAsString(summary);
+            nodeOutputDataRepository.updateOutputSummary(executionId, nodeId, summaryJson);
+        } catch (Exception e) {
+            logger.warn("Failed to update output summary for node {}: {}", nodeId, e.getMessage());
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("execution_id", executionId);
+        result.put("node_id", nodeId);
+        result.put("records_stored", records.size());
+        result.put("data", records);
+        return result;
     }
 }

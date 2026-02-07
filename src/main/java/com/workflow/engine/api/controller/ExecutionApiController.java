@@ -203,4 +203,50 @@ public class ExecutionApiController {
         Map<String, Object> recent = executionApiService.getRecentExecutions(limit);
         return ResponseEntity.ok(recent);
     }
+
+    @GetMapping(value = "/executions/{executionId}/nodes/{nodeId}/data", produces = "application/json")
+    @Operation(summary = "Get node output data", description = "Retrieve paginated processed output data for a specific node in an execution")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Node output data retrieved successfully"),
+        @ApiResponse(responseCode = "404", description = "Execution or node not found"),
+        @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
+    public ResponseEntity<Map<String, Object>> getNodeOutputData(
+            @Parameter(description = "The execution ID", required = true)
+            @PathVariable String executionId,
+            @Parameter(description = "The node ID", required = true)
+            @PathVariable String nodeId,
+            @Parameter(description = "Page number (0-indexed)")
+            @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Page size")
+            @RequestParam(defaultValue = "50") int size) {
+        Map<String, Object> data = executionApiService.getNodeOutputData(executionId, nodeId, page, size);
+        return ResponseEntity.ok(data);
+    }
+
+    @PostMapping(value = "/executions/{executionId}/nodes/{nodeId}/transform", produces = "application/json")
+    @Operation(summary = "Transform and store delimited data", description = "Transform delimited data to JSON format and store it as node output")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Data transformed and stored successfully"),
+        @ApiResponse(responseCode = "400", description = "Invalid request"),
+        @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
+    public ResponseEntity<Map<String, Object>> transformAndStore(
+            @Parameter(description = "The execution ID", required = true)
+            @PathVariable String executionId,
+            @Parameter(description = "The node ID", required = true)
+            @PathVariable String nodeId,
+            @RequestBody Map<String, String> request) {
+        String rawData = request.get("data");
+        String separator = request.getOrDefault("separator", "|");
+        String headers = request.get("headers");
+
+        if (rawData == null || headers == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing required fields: 'data' and 'headers'"));
+        }
+
+        Map<String, Object> result = executionApiService.transformAndStoreDelimitedData(
+            executionId, nodeId, rawData, separator, headers);
+        return ResponseEntity.ok(result);
+    }
 }

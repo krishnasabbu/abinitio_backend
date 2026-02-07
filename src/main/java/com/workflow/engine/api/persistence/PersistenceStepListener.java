@@ -1,6 +1,10 @@
 package com.workflow.engine.api.persistence;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.workflow.engine.api.util.DelimitedDataTransformer;
+import com.workflow.engine.execution.NodeExecutionContext;
 import com.workflow.engine.graph.StepNode;
+import com.workflow.engine.repository.NodeOutputDataRepository;
 import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.StepExecutionListener;
 import org.springframework.batch.core.ExitStatus;
@@ -9,20 +13,32 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public class PersistenceStepListener implements StepExecutionListener {
 
     private static final Logger logger = LoggerFactory.getLogger(PersistenceStepListener.class);
+    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private final JdbcTemplate jdbcTemplate;
     private final StepNode stepNode;
     private final String executionId;
+    private final NodeExecutionContext nodeContext;
+    private final NodeOutputDataRepository outputDataRepository;
 
     public PersistenceStepListener(JdbcTemplate jdbcTemplate, StepNode stepNode, String executionId) {
+        this(jdbcTemplate, stepNode, executionId, null, null);
+    }
+
+    public PersistenceStepListener(JdbcTemplate jdbcTemplate, StepNode stepNode, String executionId,
+                                    NodeExecutionContext nodeContext, NodeOutputDataRepository outputDataRepository) {
         this.jdbcTemplate = jdbcTemplate;
         this.stepNode = stepNode;
         this.executionId = executionId;
+        this.nodeContext = nodeContext;
+        this.outputDataRepository = outputDataRepository;
     }
 
     @Override
@@ -97,10 +113,43 @@ public class PersistenceStepListener implements StepExecutionListener {
 
             logger.info("Node execution completed: node='{}', status='{}', input={}, output={}, time={}ms, rowsUpdated={}",
                 stepNode.nodeId(), status, inputRecords, outputRecords, executionTimeMs, rowsUpdated);
+
+            persistOutputData(stepNode.nodeId(), stepNode.nodeType());
+
             return stepExecution.getExitStatus();
         } catch (Exception e) {
             logger.error("Error recording step completion for node '{}': {}", stepNode.nodeId(), e.getMessage(), e);
             return stepExecution.getExitStatus();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void persistOutputData(String nodeId, String nodeType) {
+        if (nodeContext == null || outputDataRepository == null) {
+            return;
+        }
+
+        try {
+            Object outputObj = nodeContext.getVariable("outputItems");
+            if (!(outputObj instanceof List)) {
+                return;
+            }
+
+            List<Map<String, Object>> outputItems = (List<Map<String, Object>>) outputObj;
+            if (outputItems.isEmpty()) {
+                return;
+            }
+
+            outputDataRepository.saveAll(executionId, nodeId, outputItems);
+
+            Map<String, Object> summary = DelimitedDataTransformer.buildOutputSummary(nodeId, nodeType, outputItems);
+            String summaryJson = objectMapper.writeValueAsString(summary);
+            outputDataRepository.updateOutputSummary(executionId, nodeId, summaryJson);
+
+            logger.info("Persisted {} output records and summary for node '{}' in execution '{}'",
+                outputItems.size(), nodeId, executionId);
+        } catch (Exception e) {
+            logger.warn("Failed to persist output data for node '{}': {}", nodeId, e.getMessage());
         }
     }
 

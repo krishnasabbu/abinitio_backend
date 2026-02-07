@@ -153,6 +153,21 @@ CREATE TABLE IF NOT EXISTS node_resource_snapshots (
 CREATE INDEX IF NOT EXISTS idx_node_resource_execution_id ON node_resource_snapshots(execution_id);
 CREATE INDEX IF NOT EXISTS idx_node_resource_node_id ON node_resource_snapshots(node_id);
 
+-- Node Output Data Domain
+CREATE TABLE IF NOT EXISTS node_output_data (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  execution_id VARCHAR(64) NOT NULL,
+  node_id VARCHAR(64) NOT NULL,
+  row_index INTEGER NOT NULL,
+  record_data CLOB NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (execution_id) REFERENCES workflow_executions(execution_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_node_output_execution_id ON node_output_data(execution_id);
+CREATE INDEX IF NOT EXISTS idx_node_output_node_id ON node_output_data(execution_id, node_id);
+CREATE INDEX IF NOT EXISTS idx_node_output_row_index ON node_output_data(execution_id, node_id, row_index);
+
 -- Database Connections Domain
 CREATE TABLE IF NOT EXISTS database_connections (
   id VARCHAR(64) PRIMARY KEY,
