@@ -83,7 +83,7 @@ public class RestAPISourceExecutor implements NodeExecutor<Map<String, Object>, 
             for (Map<String, Object> item : chunk) {
                 items.add(item);
             }
-            logger.debug("Writing {} items to context", items.size());
+            logger.info("nodeId={}, RestAPISource wrote {} items", context.getNodeDefinition().getId(), items.size());
             context.setVariable("outputItems", items);
         };
     }

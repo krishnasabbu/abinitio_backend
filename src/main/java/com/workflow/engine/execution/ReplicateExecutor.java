@@ -6,14 +6,23 @@ import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Executor for replicate nodes that create multiple copies of each input item.
+ */
 @Component
 public class ReplicateExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
+
+    private static final Logger logger = LoggerFactory.getLogger(ReplicateExecutor.class);
 
     @Override
     public String getNodeType() {
@@ -22,6 +31,13 @@ public class ReplicateExecutor implements NodeExecutor<Map<String, Object>, Map<
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            String executionId = routingCtx.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+            logger.debug("nodeId={}, Using BufferedItemReader for port 'in'", nodeId);
+            return new BufferedItemReader(executionId, nodeId, "in", routingCtx.getRoutingContext().getBufferStore());
+        }
         List<Map<String, Object>> items = (List<Map<String, Object>>) context.getVariable("inputItems");
         if (items == null) {
             items = new ArrayList<>();
@@ -52,6 +68,7 @@ public class ReplicateExecutor implements NodeExecutor<Map<String, Object>, Map<
                 }
             }
 
+            logger.info("ReplicateExecutor writing {} items", outputItems.size());
             context.setVariable("outputItems", outputItems);
         };
     }

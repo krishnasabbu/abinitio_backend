@@ -1,12 +1,16 @@
 package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -14,8 +18,14 @@ import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.util.*;
 
+/**
+ * Executor for writing data to a database table via JDBC.
+ * Supports insert, upsert, and truncate-insert modes with batch processing.
+ */
 @Component
 public class DBSinkExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
+
+    private static final Logger logger = LoggerFactory.getLogger(DBSinkExecutor.class);
 
     private final DataSourceProvider dataSourceProvider;
     private boolean truncateExecuted = false;
@@ -31,6 +41,13 @@ public class DBSinkExecutor implements NodeExecutor<Map<String, Object>, Map<Str
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            String executionId = routingCtx.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+            logger.debug("nodeId={}, Using BufferedItemReader for port 'in'", nodeId);
+            return new BufferedItemReader(executionId, nodeId, "in", routingCtx.getRoutingContext().getBufferStore());
+        }
         List<Map<String, Object>> items = (List<Map<String, Object>>) context.getVariable("inputItems");
         if (items == null) {
             items = new ArrayList<>();
@@ -45,6 +62,7 @@ public class DBSinkExecutor implements NodeExecutor<Map<String, Object>, Map<Str
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
+        String nodeId = context.getNodeDefinition().getId();
         JsonNode config = context.getNodeDefinition().getConfig();
 
         String connectionId = config.get("connectionId").asText();
@@ -78,6 +96,8 @@ public class DBSinkExecutor implements NodeExecutor<Map<String, Object>, Map<Str
             if (items.isEmpty()) {
                 return;
             }
+
+            logger.info("nodeId={}, Writing {} items to table '{}' via insert", "DBSink", items.size(), tableName);
 
             List<Map<String, Object>> batch = new ArrayList<>();
             Set<String> columns = null;
@@ -142,6 +162,7 @@ public class DBSinkExecutor implements NodeExecutor<Map<String, Object>, Map<Str
         }
 
         return items -> {
+            logger.info("nodeId={}, Writing {} items to table '{}' via upsert", "DBSink", items.size(), tableName);
             for (Map<String, Object> item : items) {
                 upsertRecord(jdbcTemplate, tableName, item, primaryKeys);
             }

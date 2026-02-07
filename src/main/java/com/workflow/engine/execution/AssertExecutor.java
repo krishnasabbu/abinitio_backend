@@ -1,6 +1,10 @@
 package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
@@ -14,9 +18,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Executor that evaluates assertion expressions against each data item and fails on unmet conditions.
+ */
 @Component
 public class AssertExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
+    private static final Logger logger = LoggerFactory.getLogger(AssertExecutor.class);
     private static final ExpressionParser parser = new SpelExpressionParser();
 
     @Override
@@ -26,6 +34,13 @@ public class AssertExecutor implements NodeExecutor<Map<String, Object>, Map<Str
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            String executionId = routingCtx.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+            logger.debug("nodeId={}, Using BufferedItemReader for port 'in'", nodeId);
+            return new BufferedItemReader(executionId, nodeId, "in", routingCtx.getRoutingContext().getBufferStore());
+        }
         List<Map<String, Object>> items = (List<Map<String, Object>>) context.getVariable("inputItems");
         if (items == null) {
             items = new ArrayList<>();
@@ -73,6 +88,7 @@ public class AssertExecutor implements NodeExecutor<Map<String, Object>, Map<Str
                     outputList.add(item);
                 }
             }
+            logger.info("Assert writer passed {} items", outputList.size());
             context.setVariable("outputItems", outputList);
         };
     }

@@ -1,6 +1,10 @@
 package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
@@ -15,8 +19,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Executor for the Validate node type, which evaluates items against SpEL-based validation rules and separates valid from invalid items.
+ */
 @Component
 public class ValidateExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
+
+    private static final Logger logger = LoggerFactory.getLogger(ValidateExecutor.class);
 
     private static final ExpressionParser parser = new SpelExpressionParser();
 
@@ -27,6 +36,13 @@ public class ValidateExecutor implements NodeExecutor<Map<String, Object>, Map<S
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            String executionId = routingCtx.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+            logger.debug("nodeId={}, Using BufferedItemReader for port 'in'", nodeId);
+            return new BufferedItemReader(executionId, nodeId, "in", routingCtx.getRoutingContext().getBufferStore());
+        }
         List<Map<String, Object>> items = (List<Map<String, Object>>) context.getVariable("inputItems");
         if (items == null) {
             items = new ArrayList<>();
@@ -89,6 +105,7 @@ public class ValidateExecutor implements NodeExecutor<Map<String, Object>, Map<S
                 }
             }
 
+            logger.info("Validate writer produced {} valid and {} invalid items", validOutputList.size(), invalidOutputList.size());
             context.setVariable("outputItems", validOutputList);
             context.setVariable("invalidItems", invalidOutputList);
         };

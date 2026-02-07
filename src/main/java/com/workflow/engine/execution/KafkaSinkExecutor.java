@@ -2,6 +2,8 @@ package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -17,6 +19,10 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
+/**
+ * Executor for writing data to Kafka topics.
+ * Supports configurable serialization, key extraction, and compression.
+ */
 @Component
 public class KafkaSinkExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
@@ -30,6 +36,13 @@ public class KafkaSinkExecutor implements NodeExecutor<Map<String, Object>, Map<
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            String executionId = routingCtx.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+            logger.debug("nodeId={}, Using BufferedItemReader for port 'in'", nodeId);
+            return new BufferedItemReader(executionId, nodeId, "in", routingCtx.getRoutingContext().getBufferStore());
+        }
         List<Map<String, Object>> items = (List<Map<String, Object>>) context.getVariable("inputItems");
         return new ListItemReader<>(items != null ? items : new ArrayList<>());
     }
@@ -55,6 +68,7 @@ public class KafkaSinkExecutor implements NodeExecutor<Map<String, Object>, Map<
         String compressionType = config.has("compressionType") ? config.get("compressionType").asText() : "none";
 
         return chunk -> {
+            logger.info("nodeId={}, Writing {} items to Kafka topic '{}'", nodeId, chunk.size(), topic);
             Properties props = new Properties();
             props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
             props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);

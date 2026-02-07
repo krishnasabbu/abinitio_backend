@@ -1,6 +1,8 @@
 package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.batch.item.ItemProcessor;
@@ -14,6 +16,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Executor that produces audit records for data items, logging selected fields to a configurable target.
+ */
 @Component
 public class AuditExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
@@ -27,6 +32,13 @@ public class AuditExecutor implements NodeExecutor<Map<String, Object>, Map<Stri
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            String executionId = routingCtx.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+            logger.debug("nodeId={}, Using BufferedItemReader for port 'in'", nodeId);
+            return new BufferedItemReader(executionId, nodeId, "in", routingCtx.getRoutingContext().getBufferStore());
+        }
         List<Map<String, Object>> items = (List<Map<String, Object>>) context.getVariable("inputItems");
         if (items == null) {
             items = new ArrayList<>();
@@ -84,6 +96,7 @@ public class AuditExecutor implements NodeExecutor<Map<String, Object>, Map<Stri
                 }
             }
 
+            logger.info("Audit writer processed {} items", outputItems.size());
             context.setVariable("outputItems", outputItems);
         };
     }

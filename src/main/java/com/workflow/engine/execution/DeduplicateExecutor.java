@@ -1,6 +1,10 @@
 package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
@@ -12,8 +16,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Executor that removes duplicate data items based on configurable key fields and a keep strategy.
+ */
 @Component
 public class DeduplicateExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
+
+    private static final Logger logger = LoggerFactory.getLogger(DeduplicateExecutor.class);
 
     @Override
     public String getNodeType() {
@@ -22,6 +31,13 @@ public class DeduplicateExecutor implements NodeExecutor<Map<String, Object>, Ma
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            String executionId = routingCtx.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+            logger.debug("nodeId={}, Using BufferedItemReader for port 'in'", nodeId);
+            return new BufferedItemReader(executionId, nodeId, "in", routingCtx.getRoutingContext().getBufferStore());
+        }
         List<Map<String, Object>> items = (List<Map<String, Object>>) context.getVariable("inputItems");
         if (items == null) {
             items = new ArrayList<>();
@@ -58,6 +74,7 @@ public class DeduplicateExecutor implements NodeExecutor<Map<String, Object>, Ma
             }
 
             List<Map<String, Object>> outputItems = new ArrayList<>(seen.values());
+            logger.info("Deduplicate writer produced {} items", outputItems.size());
             context.setVariable("outputItems", outputItems);
         };
     }

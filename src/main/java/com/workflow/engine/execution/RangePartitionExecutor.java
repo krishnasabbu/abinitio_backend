@@ -6,6 +6,10 @@ import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -13,8 +17,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
+/**
+ * Executor for range-based partition nodes that distribute items into buckets based on numeric range boundaries.
+ */
 @Component
 public class RangePartitionExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
+
+    private static final Logger logger = LoggerFactory.getLogger(RangePartitionExecutor.class);
 
     private static class RangeBucket {
         String name;
@@ -30,6 +39,13 @@ public class RangePartitionExecutor implements NodeExecutor<Map<String, Object>,
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            String executionId = routingCtx.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+            logger.debug("nodeId={}, Using BufferedItemReader for port 'in'", nodeId);
+            return new BufferedItemReader(executionId, nodeId, "in", routingCtx.getRoutingContext().getBufferStore());
+        }
         List<Map<String, Object>> items = (List<Map<String, Object>>) context.getVariable("inputItems");
         if (items == null) {
             items = new ArrayList<>();
@@ -67,6 +83,7 @@ public class RangePartitionExecutor implements NodeExecutor<Map<String, Object>,
                 partitionIndex++;
             }
 
+            logger.info("RangePartitionExecutor writing {} items", outputItems.size());
             context.setVariable("outputItems", outputItems);
         };
     }

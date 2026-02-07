@@ -1,6 +1,8 @@
 package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.batch.item.ItemProcessor;
@@ -14,6 +16,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Executor that persists checkpoint state during workflow execution for recovery and progress tracking.
+ */
 @Component
 public class CheckpointExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
@@ -26,6 +31,13 @@ public class CheckpointExecutor implements NodeExecutor<Map<String, Object>, Map
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            String executionId = routingCtx.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+            logger.debug("nodeId={}, Using BufferedItemReader for port 'in'", nodeId);
+            return new BufferedItemReader(executionId, nodeId, "in", routingCtx.getRoutingContext().getBufferStore());
+        }
         List<Map<String, Object>> items = (List<Map<String, Object>>) context.getVariable("inputItems");
         if (items == null) {
             items = new ArrayList<>();
@@ -76,6 +88,7 @@ public class CheckpointExecutor implements NodeExecutor<Map<String, Object>, Map
                 throw new RuntimeException("Checkpoint persistence failed: " + e.getMessage(), e);
             }
 
+            logger.info("Checkpoint writer processed {} items", outputItems.size());
             context.setVariable("outputItems", outputItems);
         };
     }

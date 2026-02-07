@@ -1,19 +1,30 @@
 package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Executor for the Minus node type.
+ * Computes the difference of items from two upstream inputs based on key fields.
+ * Supports routing-aware execution via BufferedItemReader when running in routing mode.
+ */
 @Component
 public class MinusExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
+
+    private static final Logger logger = LoggerFactory.getLogger(MinusExecutor.class);
 
     @Override
     public String getNodeType() {
@@ -22,6 +33,13 @@ public class MinusExecutor implements NodeExecutor<Map<String, Object>, Map<Stri
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            String executionId = routingCtx.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+            logger.debug("nodeId={}, Using BufferedItemReader for port 'in'", nodeId);
+            return new BufferedItemReader(executionId, nodeId, "in", routingCtx.getRoutingContext().getBufferStore());
+        }
         List<Map<String, Object>> items1 = (List<Map<String, Object>>) context.getVariable("in1InputItems");
         if (items1 == null) {
             items1 = new ArrayList<>();
@@ -69,6 +87,7 @@ public class MinusExecutor implements NodeExecutor<Map<String, Object>, Map<Stri
                 }
             }
 
+            logger.info("nodeId={}, Writing {} items", context.getNodeDefinition().getId(), outputItems.size());
             context.setVariable("outputItems", outputItems);
         };
     }

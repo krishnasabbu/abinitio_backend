@@ -1,11 +1,15 @@
 package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -13,8 +17,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Executor for the Collect node type.
+ * Combines items from multiple input ports (in1, in2, in3) into a single output stream.
+ * Supports routing-aware execution via BufferedItemReader when running in routing mode.
+ */
 @Component
 public class CollectExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
+
+    private static final Logger logger = LoggerFactory.getLogger(CollectExecutor.class);
 
     @Override
     public String getNodeType() {
@@ -23,6 +34,13 @@ public class CollectExecutor implements NodeExecutor<Map<String, Object>, Map<St
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            String executionId = routingCtx.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+            logger.debug("nodeId={}, Using BufferedItemReader for port 'in'", nodeId);
+            return new BufferedItemReader(executionId, nodeId, "in", routingCtx.getRoutingContext().getBufferStore());
+        }
         List<Map<String, Object>> items1 = (List<Map<String, Object>>) context.getVariable("in1InputItems");
         List<Map<String, Object>> items2 = (List<Map<String, Object>>) context.getVariable("in2InputItems");
         List<Map<String, Object>> items3 = (List<Map<String, Object>>) context.getVariable("in3InputItems");
@@ -118,6 +136,7 @@ public class CollectExecutor implements NodeExecutor<Map<String, Object>, Map<St
                 outputItems = strippedItems;
             }
 
+            logger.info("nodeId={}, Writing {} items", context.getNodeDefinition().getId(), outputItems.size());
             context.setVariable("outputItems", outputItems);
         };
     }

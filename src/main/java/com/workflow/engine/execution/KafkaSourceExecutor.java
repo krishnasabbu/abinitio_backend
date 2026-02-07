@@ -18,6 +18,10 @@ import org.slf4j.LoggerFactory;
 import java.time.Duration;
 import java.util.*;
 
+/**
+ * Executor for reading data from Kafka topics.
+ * Acts as a source node that consumes messages with configurable deserialization and timeout.
+ */
 @Component
 public class KafkaSourceExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
@@ -55,7 +59,10 @@ public class KafkaSourceExecutor implements NodeExecutor<Map<String, Object>, Ma
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
-        return items -> context.setVariable("outputItems", new ArrayList<>(items.getItems()));
+        return items -> {
+            logger.info("nodeId={}, KafkaSource wrote {} items", context.getNodeDefinition().getId(), items.size());
+            context.setVariable("outputItems", new ArrayList<>(items.getItems()));
+        };
     }
 
     @Override

@@ -1,6 +1,8 @@
 package com.workflow.engine.execution;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.workflow.engine.execution.routing.BufferedItemReader;
+import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.batch.item.ItemProcessor;
@@ -14,6 +16,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * Executor for the Throttle node type, which rate-limits item processing based on a configurable maximum records-per-second.
+ */
 @Component
 public class ThrottleExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
@@ -34,6 +39,13 @@ public class ThrottleExecutor implements NodeExecutor<Map<String, Object>, Map<S
 
     @Override
     public ItemReader<Map<String, Object>> createReader(NodeExecutionContext context) {
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            String executionId = routingCtx.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+            logger.debug("nodeId={}, Using BufferedItemReader for port 'in'", nodeId);
+            return new BufferedItemReader(executionId, nodeId, "in", routingCtx.getRoutingContext().getBufferStore());
+        }
         List<Map<String, Object>> items = (List<Map<String, Object>>) context.getVariable("inputItems");
         if (items == null) {
             items = new ArrayList<>();
@@ -95,6 +107,7 @@ public class ThrottleExecutor implements NodeExecutor<Map<String, Object>, Map<S
                 throttleState.remove();
             }
 
+            logger.info("Throttle writer produced {} items", outputItems.size());
             context.setVariable("outputItems", outputItems);
         };
     }

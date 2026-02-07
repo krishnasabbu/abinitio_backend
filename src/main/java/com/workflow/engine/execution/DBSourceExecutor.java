@@ -7,6 +7,8 @@ import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.JdbcCursorItemReader;
 import org.springframework.jdbc.core.ColumnMapRowMapper;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.util.ArrayList;
@@ -14,8 +16,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Executor for reading data from a database table or query via JDBC.
+ * Acts as a source node that fetches rows using a cursor-based reader.
+ */
 @Component
 public class DBSourceExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
+
+    private static final Logger logger = LoggerFactory.getLogger(DBSourceExecutor.class);
 
     private final DataSourceProvider dataSourceProvider;
 
@@ -80,6 +88,7 @@ public class DBSourceExecutor implements NodeExecutor<Map<String, Object>, Map<S
                     outputList.add(item);
                 }
             }
+            logger.info("nodeId={}, DBSource wrote {} items", context.getNodeDefinition().getId(), outputList.size());
             context.setVariable("outputItems", outputList);
         };
     }
