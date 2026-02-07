@@ -136,6 +136,14 @@ public class FileSourceExecutor implements NodeExecutor<Map<String, Object>, Map
 
     private ItemReader<Map<String, Object>> createTxtReader(JsonNode config, String filePath, String encoding) {
         String lineFormat = config.has("lineFormat") ? config.get("lineFormat").asText().toLowerCase() : "raw";
+        String delimiter = config.has("delimiter") ? config.get("delimiter").asText() : null;
+        boolean hasDelimiter = delimiter != null && !delimiter.trim().isEmpty();
+
+        if ("raw".equals(lineFormat) && hasDelimiter) {
+            logger.info("Delimiter '{}' configured with lineFormat 'raw', upgrading to delimited mode for file: {}",
+                delimiter, filePath);
+            return createDelimitedTxtReader(config, filePath, encoding);
+        }
 
         switch (lineFormat) {
             case "raw":
@@ -310,27 +318,18 @@ public class FileSourceExecutor implements NodeExecutor<Map<String, Object>, Map
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
-        if (context instanceof com.workflow.engine.execution.routing.RoutingNodeExecutionContext) {
-            com.workflow.engine.execution.routing.RoutingNodeExecutionContext routingContext =
-                (com.workflow.engine.execution.routing.RoutingNodeExecutionContext) context;
-            return items -> {
-                logger.debug("FileSource writing {} items to routing context", items.size());
-                List<Map<String, Object>> itemList = new ArrayList<>();
-                for (Map<String, Object> item : items) {
-                    itemList.add(item);
-                }
-                context.setVariable("outputItems", itemList);
-            };
-        } else {
-            return items -> {
-                logger.debug("FileSource writing {} items to context variables", items.size());
-                List<Map<String, Object>> itemList = new ArrayList<>();
-                for (Map<String, Object> item : items) {
-                    itemList.add(item);
-                }
-                context.setVariable("outputItems", itemList);
-            };
-        }
+        String nodeId = context.getNodeDefinition().getId();
+        return items -> {
+            List<Map<String, Object>> itemList = new ArrayList<>();
+            for (Map<String, Object> item : items) {
+                itemList.add(item);
+            }
+            logger.info("nodeId={}, FileSource writing {} items to routing context", nodeId, itemList.size());
+            if (logger.isDebugEnabled() && !itemList.isEmpty()) {
+                logger.debug("nodeId={}, FileSource first record: {}", nodeId, itemList.get(0));
+            }
+            context.setVariable("outputItems", itemList);
+        };
     }
 
     @Override

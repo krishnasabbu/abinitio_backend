@@ -62,11 +62,11 @@ public class JoinExecutor implements NodeExecutor<Map<String, Object>, Map<Strin
         List<String> rightKeys = parseArray(rightKeysStr);
 
         return items -> {
+            String nodeId = context.getNodeDefinition().getId();
             List<Map<String, Object>> rightItems;
             if (context instanceof RoutingNodeExecutionContext) {
                 RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
                 String executionId = routingCtx.getRoutingContext().getExecutionId();
-                String nodeId = context.getNodeDefinition().getId();
                 EdgeBufferStore bufferStore = routingCtx.getRoutingContext().getBufferStore();
 
                 rightItems = bufferStore.getRecords(executionId, nodeId, "right");
@@ -77,8 +77,12 @@ public class JoinExecutor implements NodeExecutor<Map<String, Object>, Map<Strin
                     rightItems = new ArrayList<>();
                 }
             }
+            if (logger.isDebugEnabled() && !rightItems.isEmpty()) {
+                logger.debug("nodeId={}, Join right sample: {}", nodeId, rightItems.get(0));
+            }
 
             Map<String, Map<String, Object>> rightIndex = buildIndex(rightItems, rightKeys);
+            logger.debug("nodeId={}, Join built right index with {} unique keys (keys={})", nodeId, rightIndex.size(), rightKeys);
 
             List<Map<String, Object>> outputItems = new ArrayList<>();
 
@@ -87,6 +91,7 @@ public class JoinExecutor implements NodeExecutor<Map<String, Object>, Map<Strin
 
                 String leftKeyStr = buildKeyString(leftItem, leftKeys);
                 Map<String, Object> rightItem = rightIndex.get(leftKeyStr);
+                logger.debug("nodeId={}, Join left key='{}' -> match={}", nodeId, leftKeyStr, rightItem != null);
 
                 if (rightItem != null) {
                     Map<String, Object> joined = new LinkedHashMap<>(leftItem);
@@ -126,8 +131,11 @@ public class JoinExecutor implements NodeExecutor<Map<String, Object>, Map<Strin
                 }
             }
 
-            logger.info("Join produced {} output items (joinType={}, leftItems={}, rightItems={})",
-                outputItems.size(), joinType, items.size(), rightItems.size());
+            logger.info("nodeId={}, Join produced {} output items (joinType={}, leftItems={}, rightItems={})",
+                nodeId, outputItems.size(), joinType, items.size(), rightItems.size());
+            if (logger.isDebugEnabled() && !outputItems.isEmpty()) {
+                logger.debug("nodeId={}, Join first output record: {}", nodeId, outputItems.get(0));
+            }
             context.setVariable("outputItems", outputItems);
         };
     }
