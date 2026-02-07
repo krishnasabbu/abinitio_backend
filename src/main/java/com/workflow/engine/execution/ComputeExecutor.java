@@ -7,7 +7,7 @@ import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.expression.spel.support.StandardEvaluationContext;
+import org.springframework.expression.spel.support.SimpleEvaluationContext;
 import org.springframework.stereotype.Component;
 import com.workflow.engine.execution.routing.BufferedItemReader;
 import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
@@ -83,8 +83,8 @@ public class ComputeExecutor implements NodeExecutor<Map<String, Object>, Map<St
 
                 try {
                     logger.debug("nodeId={}, Evaluating expression for field: {}", context.getNodeDefinition().getId(), fieldName);
-                    StandardEvaluationContext evalContext = new StandardEvaluationContext(result);
-                    Object value = parser.parseExpression(expression).getValue(evalContext);
+                    SimpleEvaluationContext evalContext = SimpleEvaluationContext.forReadWriteDataBinding().build();
+                    Object value = parser.parseExpression(expression).getValue(evalContext, result);
                     result.put(fieldName, value);
                 } catch (Exception e) {
                     logger.error("nodeId={}, Failed to evaluate expression for field '{}': {}", context.getNodeDefinition().getId(), fieldName, e.getMessage(), e);

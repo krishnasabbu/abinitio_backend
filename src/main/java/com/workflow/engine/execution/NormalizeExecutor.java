@@ -80,7 +80,7 @@ public class NormalizeExecutor implements NodeExecutor<Map<String, Object>, Map<
                 Object arrayValue = item.get(arrayField);
 
                 if (arrayValue == null) {
-                    outputList.add(item);
+                    outputList.add(new LinkedHashMap<>(item));
                 } else if (arrayValue instanceof Collection) {
                     Collection<?> collection = (Collection<?>) arrayValue;
                     for (Object element : collection) {
@@ -138,7 +138,7 @@ public class NormalizeExecutor implements NodeExecutor<Map<String, Object>, Map<
                         outputList.add(outputRow);
                     }
                 } else {
-                    outputList.add(item);
+                    outputList.add(new LinkedHashMap<>(item));
                 }
             }
 

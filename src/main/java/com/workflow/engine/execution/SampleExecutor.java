@@ -15,7 +15,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Executor for the Sample node type, which selects a subset of input items using random, first-N, or percentage-based sampling.
@@ -25,7 +25,6 @@ public class SampleExecutor implements NodeExecutor<Map<String, Object>, Map<Str
 
     private static final Logger logger = LoggerFactory.getLogger(SampleExecutor.class);
 
-    private static final Random random = new Random();
 
     @Override
     public String getNodeType() {
@@ -93,7 +92,7 @@ public class SampleExecutor implements NodeExecutor<Map<String, Object>, Map<Str
         }
 
         List<Map<String, Object>> result = new ArrayList<>(items);
-        Collections.shuffle(result, random);
+        Collections.shuffle(result, ThreadLocalRandom.current());
         return new ArrayList<>(result.subList(0, count));
     }
 

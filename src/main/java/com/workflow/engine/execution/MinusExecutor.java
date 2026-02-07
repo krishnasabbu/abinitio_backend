@@ -59,9 +59,19 @@ public class MinusExecutor implements NodeExecutor<Map<String, Object>, Map<Stri
 
         List<String> keyFields = parseArray(keyFieldsStr);
 
-        List<Map<String, Object>> items2 = (List<Map<String, Object>>) context.getVariable("in2InputItems");
-        if (items2 == null) {
-            items2 = new ArrayList<>();
+        List<Map<String, Object>> items2;
+        if (context instanceof RoutingNodeExecutionContext) {
+            RoutingNodeExecutionContext routingCtx = (RoutingNodeExecutionContext) context;
+            String executionId = routingCtx.getRoutingContext().getExecutionId();
+            String nodeId = context.getNodeDefinition().getId();
+            items2 = routingCtx.getRoutingContext().getBufferStore()
+                .getRecords(executionId, nodeId, "in2");
+            logger.debug("nodeId={}, Minus read {} items from 'in2' port", nodeId, items2.size());
+        } else {
+            items2 = (List<Map<String, Object>>) context.getVariable("in2InputItems");
+            if (items2 == null) {
+                items2 = new ArrayList<>();
+            }
         }
 
         Map<String, Boolean> set2Index = new LinkedHashMap<>();

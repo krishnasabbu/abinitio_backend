@@ -3,26 +3,27 @@ package com.workflow.engine.execution;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.workflow.engine.execution.routing.BufferedItemReader;
 import com.workflow.engine.execution.routing.RoutingNodeExecutionContext;
-import org.springframework.batch.item.Chunk;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.support.ListItemReader;
+import org.springframework.expression.ExpressionParser;
+import org.springframework.expression.spel.standard.SpelExpressionParser;
+import org.springframework.expression.spel.support.SimpleEvaluationContext;
 import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Executor for the Scan node type, which reads and passes through input items for downstream processing.
- */
 @Component
 public class ScanExecutor implements NodeExecutor<Map<String, Object>, Map<String, Object>> {
 
     private static final Logger logger = LoggerFactory.getLogger(ScanExecutor.class);
+    private static final ExpressionParser parser = new SpelExpressionParser();
 
     @Override
     public String getNodeType() {
@@ -45,16 +46,53 @@ public class ScanExecutor implements NodeExecutor<Map<String, Object>, Map<Strin
     @Override
     public ItemProcessor<Map<String, Object>, Map<String, Object>> createProcessor(NodeExecutionContext context) {
         JsonNode config = context.getNodeDefinition().getConfig();
-        String nodeId = context.getNodeDefinition().getId();
-        logger.debug("Scan node {} processing", nodeId);
-        return item -> item;
+        String condition = config.has("condition") ? config.get("condition").asText() : null;
+        String selectFieldsStr = config.has("selectFields") ? config.get("selectFields").asText() : "";
+
+        List<String> selectFields = new ArrayList<>();
+        if (!selectFieldsStr.trim().isEmpty()) {
+            for (String f : selectFieldsStr.split(",")) { selectFields.add(f.trim()); }
+        }
+
+        return item -> {
+            if (condition != null && !condition.trim().isEmpty()) {
+                try {
+                    SimpleEvaluationContext evalContext = SimpleEvaluationContext.forReadOnlyDataBinding().build();
+                    Object result = parser.parseExpression(condition).getValue(evalContext, item);
+                    if (result instanceof Boolean && !(Boolean) result) {
+                        return null;
+                    }
+                } catch (Exception e) {
+                    logger.warn("Scan condition evaluation failed: {}", e.getMessage());
+                    return null;
+                }
+            }
+
+            if (!selectFields.isEmpty()) {
+                Map<String, Object> projected = new LinkedHashMap<>();
+                for (String field : selectFields) {
+                    if (item.containsKey(field)) {
+                        projected.put(field, item.get(field));
+                    }
+                }
+                return projected;
+            }
+
+            return item;
+        };
     }
 
     @Override
     public ItemWriter<Map<String, Object>> createWriter(NodeExecutionContext context) {
         return items -> {
-            logger.info("Scan writer received {} items", items.getItems().size());
-            context.setVariable("outputItems", new ArrayList<>(items.getItems()));
+            List<Map<String, Object>> outputList = new ArrayList<>();
+            for (Map<String, Object> item : items) {
+                if (item != null) {
+                    outputList.add(item);
+                }
+            }
+            logger.info("nodeId={}, Scan wrote {} items", context.getNodeDefinition().getId(), outputList.size());
+            context.setVariable("outputItems", outputList);
         };
     }
 
